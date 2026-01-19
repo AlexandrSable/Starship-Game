@@ -99,7 +99,7 @@ function worldToCamera(pw, cam) {
 // Model space -> World space
 function modelToWorld(p, ship) {
     // ZYX rotation order: roll (Z), pitch (X), yaw (Y)
-    let r = p;
+    let r = v3(p.x * ship.scale, p.y * ship.scale, p.z * ship.scale);
     r = rotateZ(r, ship.roll);
     r = rotateX(r, ship.pitch);
     r = rotateY(r, ship.yaw);
@@ -198,6 +198,24 @@ const shipTris = [
   [22, 55, 56],[55, 57, 56],[57, 22, 56],[55, 22, 57],
 ];
 
+const boxVerts = [
+  v3(-1,-1,-1), v3( 1,-1,-1), v3( 1, 1,-1), v3(-1, 1,-1), // back  (z-)
+  v3(-1,-1, 1), v3( 1,-1, 1), v3( 1, 1, 1), v3(-1, 1, 1), // front (z+)
+];
+
+const boxTris = [
+// near face (z-)
+  [0,2,1], [0,3,2],
+  // left (x-)
+  [0,3,7], [0,7,4],
+  // right (x+)
+  [1,5,6], [1,6,2],
+  // top (y+)
+  [3,2,6], [3,6,7],
+];
+
+//////////////////////// Gameplay related functions ///////////////////////
+
 // Flat colours (one per triangle) – tweak as you like
 const shipTriColors = shipTris.map((_, i) => {
     // subtle variation
@@ -207,12 +225,21 @@ const shipTriColors = shipTris.map((_, i) => {
 
 const ship = {
     pos: v3(0, 0.0, 0),   // local offset relative to camera
+    scale: 0.7,
     yaw: 0,
     pitch: 0,
     roll: 0,
     xVel: 0,
     yVel: 0,
+
+    toCamDist: 12.0,
 };
+
+function cullObstacles() {
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+        if (obstacles[i].pos.z < cam.z - 10) obstacles.splice(i, 1);
+    }
+}
 
 //////////////////////// Procedural Ground Texture ////////////////////////
 
@@ -261,7 +288,7 @@ function renderMode7() {
     const screenCenterX = canvasWidth * 0.5;
     const screenCenterY = canvasHeight * 0.5;
 
-    const scale = 140;
+    const scale = 260;
     const fov = 1.0;
 
     for (let y = 0; y < canvasHeight; y++) {
@@ -429,7 +456,7 @@ const cy = canvasHeight * 0.5;
 function drawShip() {
     // Ship is in front of the camera by some distance in world space.
     // Since your camera is moving along +Z, place ship slightly ahead of camera.
-    const shipWorldBase = v3(cam.x, cam.height, cam.z + 16); // “in front of camera”
+    const shipWorldBase = v3(cam.x, cam.height, cam.z + ship.toCamDist); // “in front of camera”
 
     for (let i = 0; i < shipTris.length; i++) {
         const [a, b, c] = shipTris[i];
@@ -473,7 +500,7 @@ function drawShip() {
 function drawShipShadowScaled() {
     const groundY = 0.0;
 
-    const shipWorldBase = v3(cam.x, cam.height, cam.z + 12);
+    const shipWorldBase = v3(cam.x, cam.height, cam.z + ship.toCamDist - 4);
 
     const shipWorldCenter = v3(
         shipWorldBase.x,
@@ -533,9 +560,110 @@ function drawShipShadowScaled() {
     }
 }
 
+function drawBoxObstacle(o) {
+    const hx = o.half.x, hy = o.half.y, hz = o.half.z;
+
+    for (let i = 0; i < boxTris.length; i++) {
+        const [a,b,c] = boxTris[i];
+
+        const va = boxVerts[a], vb = boxVerts[b], vc = boxVerts[c];
+
+        // model->world (scale by half-extents, translate by pos)
+        const wa = v3(o.pos.x + va.x*hx, o.pos.y + va.y*hy, o.pos.z + va.z*hz);
+        const wb = v3(o.pos.x + vb.x*hx, o.pos.y + vb.y*hy, o.pos.z + vb.z*hz);
+        const wc = v3(o.pos.x + vc.x*hx, o.pos.y + vc.y*hy, o.pos.z + vc.z*hz);
+
+        const ca = worldToCamera(wa, cam);
+        const cb = worldToCamera(wb, cam);
+        const cc = worldToCamera(wc, cam);
+
+        if (ca.z <= 0.2 || cb.z <= 0.2 || cc.z <= 0.2) continue;
+
+        // same flat lighting you already use
+        const e1 = v3Sub(cb, ca);
+        const e2 = v3Sub(cc, ca);
+        const n  = v3Normalize(v3Cross(e1, e2));
+        const lightDir = v3(0, 1, 0);
+        const ambient = 0.25;
+        const intensity = ambient + (1 - ambient) * clamp(v3Dot(n, lightDir), 0, 1);
+
+        const pa = project3D(ca);
+        const pb = project3D(cb);
+        const pc = project3D(cc);
+
+        drawTriZ_Shaded(pa, pb, pc, o.color, intensity);
+    }
+}
+
+function drawObstacles() {
+    for (let i = 0; i < obstacles.length; i++) drawBoxObstacle(obstacles[i]);
+}
 
 
-///////////////////////////////////////////////////////////////////////////
+///////////////////////// Gameplay functionality //////////////////////////
+
+const obstacles = [];
+
+function spawnBox(zAhead, x, groundY, w, h, d, color) {
+    // store half extents
+    const hx = w * 0.5;
+    const hy = h * 0.5;
+    const hz = d * 0.5;
+
+    // sit on ground: center.y = groundY + hy
+    obstacles.push({
+    pos: v3(x, groundY + hy, cam.z + zAhead),
+    half: v3(hx, hy, hz),
+    color
+    });
+}
+
+function maybeSpawnObstacle() {
+    if (obstacles.length > 14) return;
+
+    const lanes = [-6, -2, 2, 6];
+    const x = lanes[(Math.random() * lanes.length) | 0];
+
+    const zAhead = 50 + Math.random() * 90;
+
+    const w = 2 + Math.random() * 4; // width
+    const h = 2 + Math.random() * 6; // height
+    const d = 2 + Math.random() * 5; // depth
+
+    spawnBox(zAhead, x, 0.0, w, h, d, packRGBA(180, 80, 80, 255));
+}
+
+function checkCollisions() {
+    const shipWorldBase = v3(cam.x, cam.height, cam.z + ship.toCamDist);
+    const shipC = v3(
+        shipWorldBase.x + ship.pos.x,
+        shipWorldBase.y + ship.pos.y,
+        shipWorldBase.z + ship.pos.z
+    );
+
+    const shipHalf = v3(1.0, 1.0, 1.0); // tune
+
+    const shipMin = v3(shipC.x - shipHalf.x, shipC.y - shipHalf.y, shipC.z - shipHalf.z);
+    const shipMax = v3(shipC.x + shipHalf.x, shipC.y + shipHalf.y, shipC.z + shipHalf.z);
+
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+        const o = obstacles[i];
+        const oMin = v3(o.pos.x - o.half.x, o.pos.y - o.half.y, o.pos.z - o.half.z);
+        const oMax = v3(o.pos.x + o.half.x, o.pos.y + o.half.y, o.pos.z + o.half.z);
+
+        const hit =
+            (shipMin.x <= oMax.x && shipMax.x >= oMin.x) &&
+            (shipMin.y <= oMax.y && shipMax.y >= oMin.y) &&
+            (shipMin.z <= oMax.z && shipMax.z >= oMin.z);
+
+        if (hit) {
+            obstacles.splice(i, 1);
+            break;
+        }
+    }
+}
+
+/////////////////////// Updates and Draw to Canvas ////////////////////////
 
 function compositeBuffers() {
     // BG + World
@@ -619,6 +747,8 @@ function renderFrame(t) {
 
     update(deltaTime);
     updateShip(deltaTime);
+    maybeSpawnObstacle();
+    checkCollisions();
 
     // Compute horizon ONCE (must match renderMode7)
     const baseHorizon = canvasHeight * 0.5;
@@ -626,7 +756,10 @@ function renderFrame(t) {
 
     renderMode7();
     drawShipShadowScaled();
+    drawObstacles();
     drawShip();
+
+    cullObstacles();
 
     compositeBuffers();
     ctx.putImageData(img, 0, 0);
