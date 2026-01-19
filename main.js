@@ -19,6 +19,9 @@ const UIBuffer32    = new Uint32Array(canvasWidth * canvasHeight);
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp =  (a, b, t) => a + (b - a) * t;
+function scale2DAbout(p, ax, ay, s) {
+    return { x: ax + (p.x - ax) * s, y: ay + (p.y - ay) * s, z: p.z };
+}
 
 //////////////////// Color & Basic Shading functions //////////////////////
 function packRGBA(r, g, b, a = 255) {
@@ -223,7 +226,7 @@ for (let y = 0; y < TEX; y++) {
 
         let r = 20, g = 140, b = 120;
         if (checker) { r += 10; g += 10; b += 10; }
-        if (gx || gy) { r = 230; g = 240; b = 255; }
+        if ((gx || gy)) { r = 230; g = 230; b = 230; }
         tex[y * TEX + x] = packRGBA(r, g, b, 255);
     }
 }
@@ -242,7 +245,7 @@ const cam = {
     pitch: 0,
     roll: 0,
     height: 5.0,   
-    speed: 6.0,
+    speed: 10.0,
 };
 
 let lastT = performance.now();
@@ -306,7 +309,6 @@ function renderMode7() {
     }
 }
 
-
 //////////////////////////// RASTERIZATION ////////////////////////////////
 
 const zbuf = new Float32Array(canvasWidth * canvasHeight);
@@ -339,7 +341,7 @@ function drawTriZ_Shaded(v0, v1, v2, baseColor, intensity) {
     const bg = unpackG(baseColor);
     const bb = unpackB(baseColor);
 
-    const darkMul  = 0.15;
+    const darkMul  = 0.65;
     const lightMul = 1.00;
 
     for (let y=minY; y<=maxY; y++) {
@@ -374,6 +376,47 @@ function drawTriZ_Shaded(v0, v1, v2, baseColor, intensity) {
     }
 }
 
+function drawShadowTri2D(p0, p1, p2, darkness01) {
+    const x0 = p0.x, y0 = p0.y;
+    const x1 = p1.x, y1 = p1.y;
+    const x2 = p2.x, y2 = p2.y;
+
+    const area = edge(x0,y0, x1,y1, x2,y2);
+    if (area === 0) return;
+    const invA = 1 / area;
+
+    const minX = Math.max(0, Math.floor(Math.min(x0,x1,x2)));
+    const maxX = Math.min(canvasWidth-1, Math.ceil (Math.max(x0,x1,x2)));
+    const minY = Math.max(0, Math.floor(Math.min(y0,y1,y2)));
+    const maxY = Math.min(canvasHeight-1, Math.ceil (Math.max(y0,y1,y2)));
+
+    // darkness01: 0..1 (higher = darker = more pixels drawn)
+    darkness01 = clamp(darkness01, 0, 1);
+
+    for (let y=minY; y<=maxY; y++) {
+        for (let x=minX; x<=maxX; x++) {
+            const px = x + 0.5, py = y + 0.5;
+
+            const w0 = edge(x1,y1, x2,y2, px,py) * invA;
+            const w1 = edge(x2,y2, x0,y0, px,py) * invA;
+            const w2 = 1 - w0 - w1;
+
+            const inside =
+                (w0 >= 0 && w1 >= 0 && w2 >= 0) ||
+                (w0 <= 0 && w1 <= 0 && w2 <= 0);
+            if (!inside) continue;
+
+            // ordered dither as “alpha”
+            if (!dither4x4(x, y, darkness01)) continue;
+
+            const idx = y * canvasWidth + x;
+
+            // write shadow (opaque) into world buffer
+            WOBuffer32[idx] = packRGBA(10, 10, 14, 255);
+        }
+    }
+}
+
 
 const fovPx = 260;
 const cx = canvasWidth * 0.5;
@@ -386,7 +429,7 @@ const cy = canvasHeight * 0.5;
 function drawShip() {
     // Ship is in front of the camera by some distance in world space.
     // Since your camera is moving along +Z, place ship slightly ahead of camera.
-    const shipWorldBase = v3(cam.x, cam.height, cam.z + 12); // “in front of camera”
+    const shipWorldBase = v3(cam.x, cam.height, cam.z + 16); // “in front of camera”
 
     for (let i = 0; i < shipTris.length; i++) {
         const [a, b, c] = shipTris[i];
@@ -427,8 +470,72 @@ function drawShip() {
     }
 }
 
-///////////////////////////////////////////////////////////////////////////
+function drawShipShadowScaled() {
+    const groundY = 0.0;
 
+    const shipWorldBase = v3(cam.x, cam.height, cam.z + 12);
+
+    const shipWorldCenter = v3(
+        shipWorldBase.x,
+        shipWorldBase.y + ship.pos.y,
+        shipWorldBase.z + ship.pos.z
+    );
+    const shadowCenterWorld = v3(shipWorldCenter.x, groundY, shipWorldCenter.z);
+
+    const cc = worldToCamera(shadowCenterWorld, cam);
+    if (cc.z <= 0.2) return;
+
+    const pc = project3D(cc);
+    const ax = pc.x, ay = pc.y;
+
+    const h = shipWorldCenter.y - groundY;
+
+    let s = 1.0 / (1.0 + h * 0.1);     // try 0.12..0.30
+    s = clamp(s, 0.8, 1.0);            // prevents it becoming tiny
+
+    // optional: a little extra shrink so it’s not “too big” even at low height
+    s *= 0.75;
+
+    // darkness based on height (optional)
+    const darkness = clamp(1.0 - h * 0.12, 0.25, 0.85);
+
+    for (let i = 0; i < shipTris.length; i++) {
+        const [a,b,c] = shipTris[i];
+
+        // model -> world
+        const wa = v3Add(modelToWorld(shipVerts[a], ship), shipWorldBase);
+        const wb = v3Add(modelToWorld(shipVerts[b], ship), shipWorldBase);
+        const wc = v3Add(modelToWorld(shipVerts[c], ship), shipWorldBase);
+
+        // drop onto ground
+        const swa = v3(wa.x, groundY, wa.z);
+        const swb = v3(wb.x, groundY, wb.z);
+        const swc = v3(wc.x, groundY, wc.z);
+
+        // world -> camera
+        const ca = worldToCamera(swa, cam);
+        const cb = worldToCamera(swb, cam);
+        const cc2 = worldToCamera(swc, cam);
+
+        if (ca.z <= 0.2 || cb.z <= 0.2 || cc2.z <= 0.2) continue;
+
+        // project
+        let pa = project3D(ca);
+        let pb = project3D(cb);
+        let pc2 = project3D(cc2);
+
+        // *** shrink around anchor ***
+        pa = scale2DAbout(pa, ax, ay, s);
+        pb = scale2DAbout(pb, ax, ay, s);
+        pc2 = scale2DAbout(pc2, ax, ay, s);
+
+        drawShadowTri2D(pa, pb, pc2, darkness);
+    }
+}
+
+
+
+///////////////////////////////////////////////////////////////////////////
 
 function compositeBuffers() {
     // BG + World
@@ -468,8 +575,8 @@ function update(deltaTime) {
 
 function updateShip(deltaTime) {
     // Left/right strafing + banking
-    const horizontalSpeed = 30.0;
-    const verticalSpeed = 30.0;
+    const horizontalSpeed = 75.0;
+    const verticalSpeed = 75.0;
     const horizontalDamping = 0.85;
 
     let inputX = 0;
@@ -482,10 +589,10 @@ function updateShip(deltaTime) {
     ship.pos.x += ship.xVel * deltaTime;
 
     // clamp to “lane”
-    ship.pos.x = clamp(ship.pos.x, -7.0, 7.0);
+    ship.pos.x = clamp(ship.pos.x, -12.0, 12.0);
 
     // roll is proportional to sideways velocity (banking)
-    const targetRoll = clamp(-ship.xVel * 0.15, -0.8, 0.8);
+    const targetRoll = clamp(-ship.xVel * 0.07, -0.8, 0.8);
     ship.roll = lerp(ship.roll, targetRoll, 1 - Math.pow(horizontalDamping, deltaTime * 60));
 
     // slight pitch up/down (optional)
@@ -499,7 +606,7 @@ function updateShip(deltaTime) {
     ship.pos.y = clamp(ship.pos.y, -5.0, 5.0);
 
     // Pitch follows vertical input with smooth easing
-    const targetPitch = clamp(-inputY * 0.3, -0.6, 0.6);
+    const targetPitch = clamp(-inputY * 0.2, -0.6, 0.6);
     ship.pitch = lerp(ship.pitch, targetPitch, 1 - Math.pow(horizontalDamping, deltaTime * 60));
 }
 
@@ -513,7 +620,12 @@ function renderFrame(t) {
     update(deltaTime);
     updateShip(deltaTime);
 
+    // Compute horizon ONCE (must match renderMode7)
+    const baseHorizon = canvasHeight * 0.5;
+    const horizon = baseHorizon - cam.pitch * canvasHeight * 0.3;
+
     renderMode7();
+    drawShipShadowScaled();
     drawShip();
 
     compositeBuffers();
