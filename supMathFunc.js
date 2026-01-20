@@ -14,6 +14,10 @@ function approach(current, target, maxStep) {
     if (Math.abs(d) <= maxStep) return target;
     return current + Math.sign(d) * maxStep;
 }
+function blink01(t, hz = 8) {
+  // returns 0 or 1 (hard toggle)
+  return ((t * hz) | 0) & 1;
+}
 //////////////////// Color & Basic Shading functions //////////////////////
 
 function packRGBA(r, g, b, a = 255) {
@@ -32,6 +36,23 @@ function dither4x4(x, y, t01) {
 function unpackR(c) { return c & 255; }
 function unpackG(c) { return (c >> 8) & 255; }
 function unpackB(c) { return (c >> 16) & 255; }
+
+function magicalUnpackAll(c)
+{
+    return {
+        r: c & 255,
+        g: (c >> 8) & 255,
+        b: (c >> 16) & 255,
+        a: (c >> 24) & 255
+    };
+}
+
+function avg3Color(c0, c1, c2) {
+    const r = ((c0 & 255) + (c1 & 255) + (c2 & 255)) / 3;
+    const g = (((c0 >> 8) & 255) + ((c1 >> 8) & 255) + ((c2 >> 8) & 255)) / 3;
+    const b = (((c0 >> 16) & 255) + ((c1 >> 16) & 255) + ((c2 >> 16) & 255)) / 3;
+    return packRGBA(r|0, g|0, b|0, 255);
+}
 
 ///////////////// Vector Math functions (for simplicity) //////////////////
 function v3(x = 0, y = 0, z = 0) { return { x, y, z }; }
@@ -99,4 +120,4 @@ export { clamp, lerp, scale2DAbout, approach, packRGBA, dither4x4,
          unpackR, unpackG, unpackB,
          v3, v3Add, v3Sub, v3Scale, v3Dot, v3Cross, v3Normalize,
          project3D, rotateX, rotateY, rotateZ,
-         worldToCamera, modelToWorld };
+         worldToCamera, modelToWorld, avg3Color, magicalUnpackAll, blink01};

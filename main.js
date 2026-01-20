@@ -2,6 +2,26 @@
 // Explanation thing
 ///////////////////////////////////////////////////////////////////////////
 
+////////////////////////////// IMPORT UTILITY /////////////////////////////
+
+import { clamp, lerp, approach, packRGBA, v3                            } from './supMathFunc.js';
+import { ship, startBarrelRoll                                          } from './ship.js';
+import { drawUI                                                         } from './UIDraw.js';
+import { drawObstacles, drawShip, drawShipShadowScaled, drawProjectiles } from './Rasterizer.js';
+import { maybeSpawnObstacle, checkCollisions, cullObstacles             } from './map.js';
+
+function clearWO() {
+    WOBuffer32.fill(0);
+}
+function clearUI() {
+    UIBuffer32.fill(0);
+}
+function clearZ() { 
+    zbuf.fill(1e9);
+}
+
+//////////////////////// Buffer & Global setup ////////////////////////////
+
 const canvas = document.getElementById("FinalRender");
 const ctx = canvas.getContext("2d", { alpha: false });
 
@@ -20,42 +40,10 @@ export const WOBuffer32    = new Uint32Array (canvasWidth * canvasHeight);
 export const UIBuffer32    = new Uint32Array (canvasWidth * canvasHeight);
 export const zbuf          = new Float32Array(canvasWidth * canvasHeight);
 
-
-////////////////////////////// IMPORT UTILITY /////////////////////////////
-import { 
-    clamp, lerp, approach, packRGBA
-} from './supMathFunc.js';
-
-import { 
-    ship, startBarrelRoll 
-} from './ship.js';
-
-import {
-    drawUI
-} from './UIDraw.js';
-
-import {
-    drawObstacles,
-    drawShip,
-    drawShipShadowScaled
-} from './Rasterizer.js';
-
-import {
-    maybeSpawnObstacle,
-    checkCollisions,
-    cullObstacles
-} from './map.js';
-
-function clearWO() {
-    WOBuffer32.fill(0);
-}
-function clearUI() {
-    UIBuffer32.fill(0);
-}
-function clearZ() { 
-    zbuf.fill(1e9);
-}
-
+export const projectiles = [];
+const PROJ_SPEED = 55;
+const PROJ_LIFE  = 1.2;
+export const PROJ_COLOR = packRGBA(10, 200, 255, 255);
 
 //////////////////////// Procedural Ground Texture ////////////////////////
 
@@ -75,7 +63,7 @@ for (let y = 0; y < TEX; y++) {
 }
 
 
-////////////////////////////// INPUT HANDLING /////////////////////////////
+///////////////////////////// INPUT HANDLING //////////////////////////////
 
 const HOLD_TIME = 0.3;  // seconds before a hold is triggered
 const TAP_TIME = 0.1;  // seconds threshold for a tap
@@ -147,6 +135,46 @@ function KeyPressed(key) {
 function endFrameKeys() {
     keyPrev.clear();
     for (const k of keys) keyPrev.add(k);
+}
+
+let prevSpace = false;
+function handleShooting() {
+  const space = keys.has("Space");
+  if (space && !prevSpace) spawnProjectile();
+  prevSpace = space;
+}
+
+function spawnProjectile() {
+  // Spawn from ship "nose" - use fixed offset in front of ship
+  const muzzleLocal = v3(0, 0.2, 3);  // Small projectile spawns slightly ahead
+
+  // Convert to world base (same convention you use to place the ship)
+  const p = {
+    pos: v3(cam.x + ship.pos.x + muzzleLocal.x,
+            cam.height + ship.pos.y + muzzleLocal.y,
+            cam.z + muzzleLocal.z),
+
+    vel: v3(0, 0, PROJ_SPEED),   // forward along +Z (your world forward)
+    life: PROJ_LIFE,
+    yaw: 0, pitch: Math.PI * 0.5, roll: 0,  // Point along Z axis
+    scale: 0.15,  // Much smaller projectiles
+    sideTilt: 0
+  };
+
+  projectiles.push(p);
+}
+
+function updateProjectiles(dt) {
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const p = projectiles[i];
+    p.life -= dt;
+
+    p.pos.x += p.vel.x * dt;
+    p.pos.y += p.vel.y * dt;
+    p.pos.z += p.vel.z * dt;
+
+    if (p.life <= 0) projectiles.splice(i, 1);
+  }
 }
 
 /////////////////////////// MODE 7 BACKGROUND /////////////////////////////
@@ -255,8 +283,6 @@ function update(deltaTime) {
     cam.roll = clamp(cam.roll, -0.2, 0.2);
     cam.roll *= Math.pow(0.1, deltaTime); // auto-centre
 
-    // Move forward (always straight ahead)
-    console.log((ship.pos.x));
     //(ship.pos.x / 10) !!!ADD THIS TO CAMERA TO PAN IT WITH THE SHIP!!!
     cam.x += (ship.pos.x / 10) * cam.speed * deltaTime;
     ship.pos.x -= (ship.pos.x / 10) * cam.speed * deltaTime;
@@ -340,10 +366,14 @@ function renderFrame(t) {
     maybeSpawnObstacle();
     checkCollisions();
 
+    handleShooting();
+    updateProjectiles(deltaTime);
+
     renderMode7();
     drawShipShadowScaled();
     drawObstacles();
     drawShip();
+    drawProjectiles();
 
     drawUI();
 

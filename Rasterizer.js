@@ -1,11 +1,11 @@
 import {v3, v3Add, v3Sub, v3Cross, v3Dot, v3Normalize, scale2DAbout,
         packRGBA, unpackR, unpackG, unpackB, clamp, dither4x4, 
-        modelToWorld, worldToCamera, project3D } from "./supMathFunc.js";
+        modelToWorld, worldToCamera, project3D, avg3Color, magicalUnpackAll, blink01} from "./supMathFunc.js";
 
-import { canvasWidth, canvasHeight, WOBuffer32, zbuf, cam, fovPx, cx, cy } from "./main.js";
+import { canvasWidth, canvasHeight, WOBuffer32, zbuf, cam, fovPx, cx, cy, projectiles, PROJ_COLOR} from "./main.js";
 import { obstacles } from "./map.js";
-import { ship, shipTriColors } from "./ship.js";
-import { shipVerts, shipTris, boxVerts, boxTris} from "./preBacked3D.js";
+import { ship, idle } from "./ship.js";
+import { shipVerts, shipTris, shipVCol, boxVerts, boxTris, projVerts, projTris } from "./preBacked3D.js";
 
 //////////////////////////// RASTERIZATION ////////////////////////////////
 
@@ -115,16 +115,55 @@ function drawShadowTri2D(p0, p1, p2, darkness01) {
 
 ///////////////////////// Draw Pre-backed meshes //////////////////////////
 
+function getShipRenderPose(timeSec) {
+  // Use two sine waves with different phases so it feels “alive”
+  const s1 = Math.sin(timeSec * Math.PI * 2 * idle.bobHz);
+  const s2 = Math.sin(timeSec * Math.PI * 2 * (idle.bobHz * 1.37) + 1.2);
+
+  // Copy current gameplay pose
+  const pose = {
+    pos:      v3(ship.pos.x, ship.pos.y, ship.pos.z),
+    yaw:      ship.yaw,
+    pitch:    ship.pitch,
+    roll:     ship.roll,
+    scale:    ship.scale,
+    sideTilt: ship.sideTilt,
+  };
+
+  // --- position bob ---
+  pose.pos.y += idle.bobAmpY * s1;
+  pose.pos.x += idle.bobAmpX * s2;
+
+  // --- tiny rotation drift ---
+  const r1 = Math.sin(timeSec * Math.PI * 2 * idle.rotHz);
+  const r2 = Math.sin(timeSec * Math.PI * 2 * (idle.rotHz * 1.21) + 0.7);
+
+  pose.pitch += idle.rotAmpPitch * r1;
+  pose.yaw   += idle.rotAmpYaw   * r2;
+
+  // Don’t mess with your banking too much; just a little extra “flutter”
+  pose.roll  += idle.rotAmpRoll  * (0.6 * r1 + 0.4 * r2);
+
+  return pose;
+}
+
+
 function drawShip() {
     const shipWorldBase = v3(cam.x, cam.height, cam.z + ship.toCamDist);
 
     for (let i = 0; i < shipTris.length; i++) {
         const [a, b, c] = shipTris[i];
+        let baseColor = packRGBA(0, 0, 0, 255);
+
+        const timeSec = performance.now() * 0.001;
+        const on = blink01(timeSec, 10); // 10 Hz toggle
+
+        const shipPose = getShipRenderPose(timeSec);
 
         // model -> world (ship local)
-        const wa = v3Add(modelToWorld(shipVerts[a], ship), shipWorldBase);
-        const wb = v3Add(modelToWorld(shipVerts[b], ship), shipWorldBase);
-        const wc = v3Add(modelToWorld(shipVerts[c], ship), shipWorldBase);
+        const wa = v3Add(modelToWorld(shipVerts[a], shipPose), shipWorldBase);
+        const wb = v3Add(modelToWorld(shipVerts[b], shipPose), shipWorldBase);
+        const wc = v3Add(modelToWorld(shipVerts[c], shipPose), shipWorldBase);
 
         // world -> camera
         const ca = worldToCamera(wa, cam);
@@ -151,13 +190,27 @@ function drawShip() {
         const pb = project3D(cb, fovPx, cx, cy);
         const pc = project3D(cc, fovPx, cx, cy);
 
+        if( magicalUnpackAll(shipVCol[a]).r < 10   && 
+            magicalUnpackAll(shipVCol[a]).g >= 240 && 
+            magicalUnpackAll(shipVCol[a]).b >= 240)
+        {
+            baseColor = on ? packRGBA(60, 220, 255, 255) : packRGBA(255, 90, 40, 255);
+        }
+        else 
+        {
+            baseColor = avg3Color(shipVCol[a], shipVCol[b], shipVCol[c]);
+        }
+
         // draw
-        drawTriZ_Shaded(pa, pb, pc, shipTriColors[i], intensity);
+        drawTriZ_Shaded(pa, pb, pc, baseColor, intensity);
     }
 }
 
 function drawShipShadowScaled() {
     const groundY = 0.0;
+
+    const timeSec = performance.now() * 0.001;
+    const shipPose = getShipRenderPose(timeSec);
 
     const shipWorldBase = v3(cam.x, cam.height, cam.z + ship.toCamDist - 4);
 
@@ -189,9 +242,9 @@ function drawShipShadowScaled() {
         const [a,b,c] = shipTris[i];
 
         // model -> world
-        const wa = v3Add(modelToWorld(shipVerts[a], ship), shipWorldBase);
-        const wb = v3Add(modelToWorld(shipVerts[b], ship), shipWorldBase);
-        const wc = v3Add(modelToWorld(shipVerts[c], ship), shipWorldBase);
+        const wa = v3Add(modelToWorld(shipVerts[a], shipPose), shipWorldBase);
+        const wb = v3Add(modelToWorld(shipVerts[b], shipPose), shipWorldBase);
+        const wc = v3Add(modelToWorld(shipVerts[c], shipPose), shipWorldBase);
 
         // drop onto ground
         const swa = v3(wa.x, groundY, wa.z);
@@ -257,8 +310,39 @@ function drawObstacles() {
     for (let i = 0; i < obstacles.length; i++) drawBoxObstacle(obstacles[i]);
 }
 
+function drawProjectiles() {
+  for (const pr of projectiles) {
+    for (let i = 0; i < projTris.length; i++) {
+      const [a,b,c] = projTris[i];
+
+      // model -> world
+      const wa = v3Add(modelToWorld(projVerts[a], pr), pr.pos);
+      const wb = v3Add(modelToWorld(projVerts[b], pr), pr.pos);
+      const wc = v3Add(modelToWorld(projVerts[c], pr), pr.pos);
+
+      // world -> camera
+      const ca = worldToCamera(wa, cam);
+      const cb = worldToCamera(wb, cam);
+      const cc = worldToCamera(wc, cam);
+
+      if (ca.z <= 0.2 || cb.z <= 0.2 || cc.z <= 0.2) continue;
+
+      const pa = project3D(ca, fovPx, cx, cy);
+      const pb = project3D(cb, fovPx, cx, cy);
+      const pc = project3D(cc, fovPx, cx, cy);
+
+      const n = v3Normalize(v3Cross(v3Sub(cb, ca), v3Sub(cc, ca)));
+      const intensity = 0.35 + 0.65 * clamp(v3Dot(n, v3(0,1,0)), 0, 1);
+
+      drawTriZ_Shaded(pa, pb, pc, PROJ_COLOR, intensity);
+    }
+  }
+}
+
+
 export {
     drawShip,
     drawShipShadowScaled,
-    drawObstacles
+    drawObstacles,
+    drawProjectiles
 };
