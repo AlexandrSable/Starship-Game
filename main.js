@@ -224,15 +224,17 @@ const shipTriColors = shipTris.map((_, i) => {
 });
 
 const ship = {
-    pos: v3(0.0, -4.0, 0.0),   // local offset relative to camera
+    //Magical transform parameters
+    pos: v3(0.0, -4.0, 0.0),   // local offset relative to camera NOT WORLD POSITION!
     scale: 0.7,
     yaw: 0,
     pitch: 0,
     roll: 0,
     xVel: 0,
     yVel: 0,
-
+    // Camera parameters
     toCamDist: 12.0,
+    // Barrel roll parameters
     rollActive: false,
     rollDir: 0,
     rollT: 0,
@@ -240,7 +242,15 @@ const ship = {
     rollStart: 0,
     rollEnd: 0,
     rollInvulnTime: 0,
+    //Gameplay parameters
+    Shield: 5,
+    Energy: 5,
 };
+
+const projectile = {
+    pos: v3(0, 0, 0),
+    vel: v3(0, 0, 0),
+}
 
 function cullObstacles() {
     for (let i = obstacles.length - 1; i >= 0; i--) {
@@ -661,6 +671,7 @@ function maybeSpawnObstacle() {
     spawnBox(zAhead, x, 0.0, w, h, d, packRGBA(180, 80, 80, 255));
 }
 
+// test git
 function checkCollisions() {
     const shipWorldBase = v3(cam.x, cam.height, cam.z + ship.toCamDist);
     const shipC = v3(
