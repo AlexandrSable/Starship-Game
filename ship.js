@@ -25,6 +25,7 @@ export const ship = {
     sideTarget: 0,
     sideSpeed: 10,
     //Gameplay parameters
+    Score: 0,
     Shield: 5,
     Energy: 5,
 };

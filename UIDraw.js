@@ -131,9 +131,11 @@ function drawUI() {
         uiRect(barX, barY, ((barW * clamp(ship.Energy, 0, 100)) / 5) | 0, barH, packRGBA(120, 100, 210, 255));
 
     // Shield text
-        uiText(20, 317, "SHIELD:", white, 1.5);
+        uiText(40, 315, "SHIELD", white, 1.5);
     // Energy text
-        uiText(540, 317, "ENERGY:", white, 1.5);
+        uiText(560, 315, "ENERGY", white, 1.5);
+    // Score text
+        uiText(260, 20, `SC0RE: ${ship.Score}`, white, 3);
 }
 
 export { drawUI };
