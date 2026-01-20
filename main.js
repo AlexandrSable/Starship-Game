@@ -224,7 +224,7 @@ const shipTriColors = shipTris.map((_, i) => {
 });
 
 const ship = {
-    pos: v3(0, 0.0, 0),   // local offset relative to camera
+    pos: v3(0.0, -4.0, 0.0),   // local offset relative to camera
     scale: 0.7,
     yaw: 0,
     pitch: 0,
@@ -233,12 +233,33 @@ const ship = {
     yVel: 0,
 
     toCamDist: 12.0,
+    rollActive: false,
+    rollDir: 0,
+    rollT: 0,
+    rollDuration: 0.55,
+    rollStart: 0,
+    rollEnd: 0,
+    rollInvulnTime: 0,
 };
 
 function cullObstacles() {
     for (let i = obstacles.length - 1; i >= 0; i--) {
         if (obstacles[i].pos.z < cam.z - 10) obstacles.splice(i, 1);
     }
+}
+
+function startBarrellRoll(dir) {
+    if(ship.rollActive) return;
+
+    ship.rollActive = true;
+    ship.rollDir = dir;
+    ship.rollT = 0;
+
+    ship.xVel = dir * 40.0;
+    ship.rollStart = ship.roll;
+    ship.rollEnd = ship.rollStart - dir * Math.PI * 2;
+
+    ship.rollInvulnTime = 0.45;
 }
 
 //////////////////////// Procedural Ground Texture ////////////////////////
@@ -265,6 +286,17 @@ const keys = new Set();
 window.addEventListener("keydown"   , (e) => keys.add(e.code));
 window.addEventListener("keyup"     , (e) => keys.delete(e.code));
 
+const keyPrev = new Set();
+
+function KeyPressed(key) {
+    return keys.has(key) && !keyPrev.has(key);
+}
+
+function endFrameKeys() {
+    keyPrev.clear();
+    for (const k of keys) keyPrev.add(k);
+}
+
 // ---- camera ----
 const cam = {
     x: 0,
@@ -272,7 +304,7 @@ const cam = {
     pitch: 0,
     roll: 0,
     height: 5.0,   
-    speed: 10.0,
+    speed: 20.0,
 };
 
 let lastT = performance.now();
@@ -433,12 +465,12 @@ function drawShadowTri2D(p0, p1, p2, darkness01) {
                 (w0 <= 0 && w1 <= 0 && w2 <= 0);
             if (!inside) continue;
 
-            // ordered dither as “alpha”
+            // ordered dither as alpha substitute
             if (!dither4x4(x, y, darkness01)) continue;
 
             const idx = y * canvasWidth + x;
 
-            // write shadow (opaque) into world buffer
+            // write shadow to world buffer
             WOBuffer32[idx] = packRGBA(10, 10, 14, 255);
         }
     }
@@ -454,9 +486,7 @@ const cy = canvasHeight * 0.5;
 ///////////////////////// Draw Pre-backed meshes //////////////////////////
 
 function drawShip() {
-    // Ship is in front of the camera by some distance in world space.
-    // Since your camera is moving along +Z, place ship slightly ahead of camera.
-    const shipWorldBase = v3(cam.x, cam.height, cam.z + ship.toCamDist); // “in front of camera”
+    const shipWorldBase = v3(cam.x, cam.height, cam.z + ship.toCamDist);
 
     for (let i = 0; i < shipTris.length; i++) {
         const [a, b, c] = shipTris[i];
@@ -471,16 +501,15 @@ function drawShip() {
         const cb = worldToCamera(wb, cam);
         const cc = worldToCamera(wc, cam);
 
-        // Flat normal in camera space
+        // Camera space flat normal
         const e1 = v3Sub(cb, ca);
         const e2 = v3Sub(cc, ca);
         let n = v3Normalize(v3Cross(e1, e2));
 
-        // “Sun straight above player”: +Y (camera/engine up)
         const lightDir = v3(0, 1, 0);
 
         // Lambert + ambient
-        const ambient = 0.25;
+        const ambient = 0.5;
         let ndl = clamp(v3Dot(n, lightDir), 0, 1);
         const intensity = ambient + (1 - ambient) * ndl;
 
@@ -517,13 +546,13 @@ function drawShipShadowScaled() {
 
     const h = shipWorldCenter.y - groundY;
 
-    let s = 1.0 / (1.0 + h * 0.1);     // try 0.12..0.30
-    s = clamp(s, 0.8, 1.0);            // prevents it becoming tiny
+    let s = 1.0 / (1.0 + h * 0.1);     // 0.12 to 0.30 best
+    s = clamp(s, 0.8, 1.0);            // CLAMP!
 
-    // optional: a little extra shrink so it’s not “too big” even at low height
+    // Shrinkification fasctor 
     s *= 0.75;
 
-    // darkness based on height (optional)
+    // darkness based on height
     const darkness = clamp(1.0 - h * 0.12, 0.25, 0.85);
 
     for (let i = 0; i < shipTris.length; i++) {
@@ -568,7 +597,7 @@ function drawBoxObstacle(o) {
 
         const va = boxVerts[a], vb = boxVerts[b], vc = boxVerts[c];
 
-        // model->world (scale by half-extents, translate by pos)
+        // model->world (scale by half-extents + translate by pos)
         const wa = v3(o.pos.x + va.x*hx, o.pos.y + va.y*hy, o.pos.z + va.z*hz);
         const wb = v3(o.pos.x + vb.x*hx, o.pos.y + vb.y*hy, o.pos.z + vb.z*hz);
         const wc = v3(o.pos.x + vc.x*hx, o.pos.y + vc.y*hy, o.pos.z + vc.z*hz);
@@ -579,7 +608,6 @@ function drawBoxObstacle(o) {
 
         if (ca.z <= 0.2 || cb.z <= 0.2 || cc.z <= 0.2) continue;
 
-        // same flat lighting you already use
         const e1 = v3Sub(cb, ca);
         const e2 = v3Sub(cc, ca);
         const n  = v3Normalize(v3Cross(e1, e2));
@@ -697,12 +725,14 @@ function update(deltaTime) {
     cam.roll *= Math.pow(0.1, deltaTime); // auto-centre
 
     // Move forward (always straight ahead)
-    cam.x += 0 * cam.speed * deltaTime;
+    console.log((ship.pos.x));
+    //(ship.pos.x / 10) !!!ADD THIS TO CAMERA TO PAN IT WITH THE SHIP!!!
+    cam.x += (ship.pos.x / 10) * cam.speed * deltaTime;
+    ship.pos.x -= (ship.pos.x / 10) * cam.speed * deltaTime;
     cam.z += 1 * cam.speed * deltaTime;
 }
 
 function updateShip(deltaTime) {
-    // Left/right strafing + banking
     const horizontalSpeed = 75.0;
     const verticalSpeed = 75.0;
     const horizontalDamping = 0.85;
@@ -715,13 +745,9 @@ function updateShip(deltaTime) {
     ship.xVel *= Math.pow(horizontalDamping, deltaTime * 60);
 
     ship.pos.x += ship.xVel * deltaTime;
+    ship.pos.x = clamp(ship.pos.x, -100.0, 100.0);
 
-    // clamp to “lane”
-    ship.pos.x = clamp(ship.pos.x, -12.0, 12.0);
 
-    // roll is proportional to sideways velocity (banking)
-    const targetRoll = clamp(-ship.xVel * 0.07, -0.8, 0.8);
-    ship.roll = lerp(ship.roll, targetRoll, 1 - Math.pow(horizontalDamping, deltaTime * 60));
 
     // slight pitch up/down (optional)
     let inputY = 0;
@@ -736,6 +762,34 @@ function updateShip(deltaTime) {
     // Pitch follows vertical input with smooth easing
     const targetPitch = clamp(-inputY * 0.2, -0.6, 0.6);
     ship.pitch = lerp(ship.pitch, targetPitch, 1 - Math.pow(horizontalDamping, deltaTime * 60));
+
+
+    
+    // Rolling rolling rolling
+    if(KeyPressed("KeyQ")) startBarrellRoll(-1);
+    if(KeyPressed("KeyE")) startBarrellRoll(1);
+
+    if (ship.rollActive) {
+    ship.rollT += deltaTime;
+    const t = clamp(ship.rollT / ship.rollDuration, 0, 1);
+
+    const s = t * t * (3 - 2 * t);
+
+    ship.roll = lerp(ship.rollStart, ship.rollEnd, s);
+
+    if (t < 0.5) ship.pos.x += ship.rollDir * 5.0 * deltaTime;
+
+    if (t >= 1) {
+        ship.rollActive = false;
+        ship.roll = ((ship.roll % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+        if (ship.roll > Math.PI) ship.roll -= Math.PI * 2;
+    }
+    } else {
+    const targetRoll = clamp(-ship.xVel * 0.5, -0.8, 0.8);
+    ship.roll = lerp(ship.roll, targetRoll, 1 - Math.pow(horizontalDamping, deltaTime * 60));
+    ship.rollActive = false;
+    }
+
 }
 
 function renderFrame(t) {
@@ -750,10 +804,6 @@ function renderFrame(t) {
     maybeSpawnObstacle();
     checkCollisions();
 
-    // Compute horizon ONCE (must match renderMode7)
-    const baseHorizon = canvasHeight * 0.5;
-    const horizon = baseHorizon - cam.pitch * canvasHeight * 0.3;
-
     renderMode7();
     drawShipShadowScaled();
     drawObstacles();
@@ -764,6 +814,7 @@ function renderFrame(t) {
     compositeBuffers();
     ctx.putImageData(img, 0, 0);
 
+    endFrameKeys();
     requestAnimationFrame(renderFrame);
 }
 
