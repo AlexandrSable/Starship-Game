@@ -1,5 +1,5 @@
 import { v3, packRGBA, clamp, aimAngles, approachAngle} from "./supportMathFuncs.js";
-import { cam, projectiles, enemyShots } from "./main.js";
+import { cam, projectiles, enemyShots, resetBestScore, bestScore} from "./main.js";
 import { ship } from "./playerShip.js";
 import { obstacles } from "./sceneHandler.js";
 
@@ -317,6 +317,7 @@ export function applyDamageToPlayer(damage) {
 
 function onPlayerDeath() {
     console.log("Player died! Resetting level...");
+    resetBestScore(Math.max(bestScore, Math.floor(ship.Score)));
     resetLevel();
 }
 

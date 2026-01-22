@@ -9,7 +9,7 @@ import { ship, startBarrelRoll, updateShipResources                             
 import { drawUI                                                                                         } from './UIDraw.js';
 import { drawObstacles, drawShip, drawShipShadowScaled, drawProjectiles, drawEnemies, drawBoxObstacle   } from './sRasterizer.js';
 import { updateObstacles, checkCollisions, cullObstacles, obstacles                                     } from './sceneHandler.js';
-import { updateEnemies, updateEnemyShots, enemies, applyDamageToPlayer                                  } from './enemyHandler.js';
+import { updateEnemies, updateEnemyShots, enemies, applyDamageToPlayer, resetLevel                      } from './enemyHandler.js';
 
 function clearWO() {
     WOBuffer32.fill(0);
@@ -19,6 +19,9 @@ function clearUI() {
 }
 function clearZ() { 
     zbuf.fill(1e9);
+}
+function clearSSVE() {
+    SSVEBuffer32.fill(0);
 }
 
 //////////////////////// Buffer & Global setup ////////////////////////////
@@ -32,6 +35,16 @@ export const fovPx = 260;
 export const canvasWidth = canvas.width
 export const canvasHeight = canvas.height;
 
+export let deltaTime = 0;
+export let fpsCounter = 0;
+
+export let bestScore = localStorage.getItem('bestScore') ? parseInt(localStorage.getItem('bestScore')) : 0;
+
+export function resetBestScore(Value) {
+    bestScore = Value;
+    localStorage.setItem('bestScore', bestScore);
+}
+
 export const cx = canvasWidth * 0.5;
 export const cy = canvasHeight * 0.5;
 
@@ -42,6 +55,7 @@ export const BGBuffer32    = new Uint32Array (canvasWidth * canvasHeight);
 export const WOBuffer32    = new Uint32Array (canvasWidth * canvasHeight);
 export const UIBuffer32    = new Uint32Array (canvasWidth * canvasHeight);
 export const zbuf          = new Float32Array(canvasWidth * canvasHeight);
+export const SSVEBuffer32  = new Uint32Array (canvasWidth * canvasHeight);
 
 export const projectiles = [];
 export const enemyShots = [];
@@ -86,7 +100,7 @@ function renderStars(dt) {
 
     const speedZ = 10;
     for (let i = 0; i < STAR_COUNT; i++) {
-        let StartColor = packRGBA(bitShiftRNG(i) * 255, bitShiftRNG(i) * 255, bitShiftRNG(i) * 255, 255);
+        let StarColor = packRGBA(bitShiftRNG(i) * 255, bitShiftRNG(i) * 255, bitShiftRNG(i) * 255, 255);
         const ix = i * 3;
         stars[ix + 2] -= speedZ * dt;
         stars[ix + 0] += STAR_DRIFT_X * dt; 
@@ -106,7 +120,7 @@ function renderStars(dt) {
         const y = sy | 0;
         if (x < 0 || x >= canvasWidth || y < 0 || y >= canvasHeight) continue;
 
-        BGBuffer32[y * canvasWidth + x] = StartColor;
+        BGBuffer32[y * canvasWidth + x] = StarColor;
     }
 }
 
@@ -329,12 +343,20 @@ function compositeBuffers() {
         FinalImage32[i] = (a !== 0) ? w : BGBuffer32[i];
     }
     
+    // SSVE + Result
+    for (let i = 0; i < FinalImage32.length; i++) {
+        const s = SSVEBuffer32[i];
+        const a = s >>> 24;  // alpha byte
+        FinalImage32[i] = (a !== 0) ? s : FinalImage32[i];
+    }
+
     // Result + UI
     for (let i = 0; i < FinalImage32.length; i++) {
         const u = UIBuffer32[i];
         const a = u >>> 24;  // alpha byte
         FinalImage32[i] = (a !== 0) ? u : FinalImage32[i];
     }
+
 }
 
 function update(deltaTime) {
@@ -448,17 +470,24 @@ function updateShip(deltaTime) {
 }
 
 function renderFrame(t) {
-    const deltaTime = Math.min(0.033, (t - lastT) / 1000);
+    deltaTime = Math.min(0.033, (t - lastT) / 1000);
     lastT = t;
-    console.log(deltaTime);
+    if(Math.sin(t) > 0.9) fpsCounter = 1/deltaTime;
 
     clearWO();
     clearZ();
     clearUI();
+    clearSSVE();
 
     if(!MAINMENUOPENED){
+        if (keys.has("Escape")) 
+        {
+            resetLevel();
+            MAINMENUOPENED = true;
+        }
+        ship.yaw = 0.0;
+        ship.pos.z = 0.0;
         // Run the game
-        ship.lightDir = (0, 1, 0);
         update(deltaTime);
         handleShooting();
         updateShip(deltaTime);
@@ -476,11 +505,11 @@ function renderFrame(t) {
         drawEnemies(drawBoxObstacle);
         drawShip();
         drawProjectiles();
-        drawUI();
 
     }
     else
     {
+        if (keys.has("Space")) MAINMENUOPENED = false;
         // Draw Main Menu
         renderStars(deltaTime);
         ship.lightDir = v3(0, 1, -1);
@@ -498,9 +527,9 @@ function renderFrame(t) {
 
         updateShip(deltaTime);
         drawShip();
-        drawUI();
     }
 
+    drawUI(t);
     compositeBuffers();
     ctx.putImageData(img, 0, 0);
 

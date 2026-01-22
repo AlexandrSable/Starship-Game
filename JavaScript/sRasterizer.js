@@ -401,7 +401,11 @@ function drawDrone(e) {
 function drawTurret(e) {
     const turretScale = 6.5;  // Scale multiplier for turret mesh
     for (let i = 0; i < turretTris.length; i++) {
+        let baseColor = packRGBA(0, 0, 0, 255);
         const [a,b,c] = turretTris[i];
+
+        const timeSec = performance.now() * 0.001;
+        const on = blink01(timeSec, 10); // 10 Hz toggle
 
         // Scale vertices and apply model -> world
         const scaledA = v3(turretVerts[a].x * turretScale, turretVerts[a].y * turretScale, turretVerts[a].z * turretScale);
@@ -433,7 +437,17 @@ function drawTurret(e) {
         const ambient = 0.4;
         const intensity = ambient + (1 - ambient) * clamp(v3Dot(n, lightDir), 0, 1);
 
-        const baseColor = avg3Color(turretVCol[a], turretVCol[b], turretVCol[c]);
+        if( magicalUnpackAll(turretVCol[a]).r < 10   && 
+            magicalUnpackAll(turretVCol[a]).g >= 240 && 
+            magicalUnpackAll(turretVCol[a]).b >= 240)
+        {
+            baseColor = on ? packRGBA(60, 220, 255, 255) : packRGBA(255, 90, 40, 255);
+        }
+        else 
+        {
+            baseColor = avg3Color(turretVCol[a], turretVCol[b], turretVCol[c]);
+        }
+
         drawTriZ_Shaded(pa, pb, pc, baseColor, intensity);
     }
 }

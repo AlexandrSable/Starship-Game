@@ -1,6 +1,6 @@
-import { packRGBA, clamp                                        } from "./supportMathFuncs.js";
-import { canvasHeight, canvasWidth, UIBuffer32, MAINMENUOPENED  } from "./main.js";
-import { ship                                                   } from "./playerShip.js";
+import { packRGBA, clamp                                                                         } from "./supportMathFuncs.js";
+import { canvasHeight, canvasWidth, UIBuffer32, MAINMENUOPENED, fpsCounter, deltaTime, bestScore } from "./main.js";
+import { ship                                                                                    } from "./playerShip.js";
 
 ///////////////////////////// UI Draw functions ///////////////////////////
 
@@ -73,6 +73,7 @@ const FONT4x6 = {
     "L": [0b0100,0b0100,0b0100,0b0100,0b0100,0b0111],
     "M": [0b1001,0b1111,0b1111,0b1001,0b1001,0b1001],
     "N": [0b1001,0b1101,0b1101,0b1011,0b1001,0b1001],
+    "O": [0b0110,0b1001,0b1001,0b1001,0b1001,0b0110],
     "P": [0b1110,0b1001,0b1110,0b1000,0b1000,0b1000],
     "R": [0b1110,0b1001,0b1110,0b1010,0b1001,0b1001],
     "T": [0b1111,0b0100,0b0100,0b0100,0b0100,0b0100],
@@ -119,9 +120,15 @@ function uiText(x, y, text, col, scale = 2, spacing = 1) {
 
 
 
-function drawUI() {
+function drawUI(Time) {
     const white = packRGBA(245, 245, 245, 255);
+    const highlight = packRGBA(200, 200, 255, 255);
     // Check if main menu is not opened or opened
+
+    uiText(10, 10, `FPS:${Math.floor(fpsCounter)}`, white, 1);
+    uiText(10, 18, `DT:${(deltaTime.toFixed(3)) * 1000} ms`, white, 1);
+    uiText(10, 26, `BEST SCORE:${bestScore}`, white, 1);
+
     if (!MAINMENUOPENED) {
         // Shield (HP) bar
             const ShieldbarX = 20, ShieldbarY = 330, ShieldbarW = 80, ShieldbarH = 12;
@@ -144,9 +151,9 @@ function drawUI() {
     else
     {
         // Draw Main Menu UI
-        uiText(200, 100, "STARSHIP", white, 3);
-        uiText(200, 150, "GAME", white, 3);
-        uiText(200, 250, "Press SPACE to start", white, 1.5);
+        uiText(50, 50, "STARSHIP", white, 6);
+        uiText(50, 100, "THE GAME", white, 3);
+        uiText(250, 330, "Press SPACE to start", Math.sin(Time/130) > 0.1 ? white : highlight, 1.5);
     }
 }
 
