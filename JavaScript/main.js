@@ -4,11 +4,12 @@
 
 ////////////////////////////// IMPORT UTILITY /////////////////////////////
 
-import { clamp, lerp, approach, packRGBA, v3                            } from './supMathFunc.js';
-import { ship, startBarrelRoll                                          } from './ship.js';
-import { drawUI                                                         } from './UIDraw.js';
-import { drawObstacles, drawShip, drawShipShadowScaled, drawProjectiles } from './Rasterizer.js';
-import { maybeSpawnObstacle, checkCollisions, cullObstacles             } from './map.js';
+import { clamp, lerp, approach, packRGBA, v3, approachAngle                                             } from './supportMathFuncs.js';
+import { ship, startBarrelRoll, updateShipResources                                                     } from './playerShip.js';
+import { drawUI                                                                                         } from './UIDraw.js';
+import { drawObstacles, drawShip, drawShipShadowScaled, drawProjectiles, drawEnemies, drawBoxObstacle   } from './sRasterizer.js';
+import { updateObstacles, checkCollisions, cullObstacles, obstacles                                    } from './sceneHandler.js';
+import { updateEnemies, updateEnemyShots, enemies, applyDamageToPlayer                                } from './enemyHandler.js';
 
 function clearWO() {
     WOBuffer32.fill(0);
@@ -41,9 +42,10 @@ export const UIBuffer32    = new Uint32Array (canvasWidth * canvasHeight);
 export const zbuf          = new Float32Array(canvasWidth * canvasHeight);
 
 export const projectiles = [];
-const PROJ_SPEED = 55;
-const PROJ_LIFE  = 1.2;
-export const PROJ_COLOR = packRGBA(10, 200, 255, 255);
+export const enemyShots = [];
+const PROJ_SPEED = 110;
+const PROJ_LIFE  = 2.2;
+export const PROJ_COLOR = packRGBA(10, 220, 255, 255);
 
 //////////////////////// Procedural Ground Texture ////////////////////////
 
@@ -65,7 +67,7 @@ for (let y = 0; y < TEX; y++) {
 
 ///////////////////////////// INPUT HANDLING //////////////////////////////
 
-const HOLD_TIME = 0.3;  // seconds before a hold is triggered
+const HOLD_TIME = 0.15;  // seconds before a hold is triggered
 const TAP_TIME = 0.1;  // seconds threshold for a tap
 
 const keyState = {
@@ -89,39 +91,44 @@ window.addEventListener("keyup", (e) => {
 });
 
 function updateQEHolds(dt) {
-    // Q hold
+    // Q hold - rotate to nearest right (clockwise)
     if (keyState.Q.down) {
         keyState.Q.t += dt;
         if (!keyState.Q.didHold && keyState.Q.t >= HOLD_TIME) {
             keyState.Q.didHold = true;
-            ship.sideTarget = -Math.PI * 0.5; // -90°
+            // Cancel any barrel roll that might have started
+            ship.rollActive = false;
+            // Find nearest +90° position (could be π/2 or -3π/2)
+            const rightTarget = Math.PI * 0.5;
+            const rightAlt = rightTarget - Math.PI * 2;
+            ship.sideTarget = Math.abs(ship.sideTilt - rightTarget) <= Math.abs(ship.sideTilt - rightAlt) ? rightTarget : rightAlt;
         }
     }
 
-    // E hold
+    // E hold - rotate to nearest left (counterclockwise)
     if (keyState.E.down) {
         keyState.E.t += dt;
         if (!keyState.E.didHold && keyState.E.t >= HOLD_TIME) {
             keyState.E.didHold = true;
-            ship.sideTarget = Math.PI * 0.5; // +90°
+            // Cancel any barrel roll that might have started
+            ship.rollActive = false;
+            // Find nearest -90° position (could be -π/2 or 3π/2)
+            const leftTarget = -Math.PI * 0.5;
+            const leftAlt = leftTarget + Math.PI * 2;
+            ship.sideTarget = Math.abs(ship.sideTilt - leftTarget) <= Math.abs(ship.sideTilt - leftAlt) ? leftTarget : leftAlt;
         }
     }
 }
 
 function onQERelease(dir, st) {
-    // If a hold was triggered, just return to neutral
-    if (st.didHold) {
+    // If a hold was triggered, or the key was held long enough, return to neutral
+    if (st.didHold || st.t >= HOLD_TIME) {
         ship.sideTarget = 0; // go back to normal orientation
-    return;
+        return;
     }
 
-    // Otherwise it was a tap: do barrel roll
-    if (st.t <= TAP_TIME) {
-        startBarrelRoll(dir);
-    }
-    // If it's in-between (neither tap nor hold), you can choose behavior:
-    // Here: treat as tap anyway
-    else {
+    // Only do barrel roll on very quick taps (under 0.15 seconds)
+    if (st.t < 0.15) {
         startBarrelRoll(dir);
     }
 }
@@ -146,19 +153,21 @@ function handleShooting() {
 
 function spawnProjectile() {
   // Spawn from ship "nose" - use fixed offset in front of ship
-  const muzzleLocal = v3(0, 0.2, 3);  // Small projectile spawns slightly ahead
+  const muzzleLocal = v3(0, -0.2, 17);  // Small projectile spawns slightly ahead
 
   // Convert to world base (same convention you use to place the ship)
   const p = {
-    pos: v3(cam.x + ship.pos.x + muzzleLocal.x,
+    pos: v3(cam.x + ship.pos.x      + muzzleLocal.x,
             cam.height + ship.pos.y + muzzleLocal.y,
-            cam.z + muzzleLocal.z),
+            cam.z                   + muzzleLocal.z),
 
     vel: v3(0, 0, PROJ_SPEED),   // forward along +Z (your world forward)
+    half: v3(0.2, 0.2, 0.4),    // collision half-extents for the projectile
     life: PROJ_LIFE,
     yaw: 0, pitch: Math.PI * 0.5, roll: 0,  // Point along Z axis
-    scale: 0.15,  // Much smaller projectiles
-    sideTilt: 0
+    scale: 0.1,  // Much smaller projectiles
+    sideTilt: 0,
+    color: PROJ_COLOR  // cyan color for player projectiles
   };
 
   projectiles.push(p);
@@ -172,6 +181,20 @@ function updateProjectiles(dt) {
     p.pos.x += p.vel.x * dt;
     p.pos.y += p.vel.y * dt;
     p.pos.z += p.vel.z * dt;
+
+    // Check collision with obstacles
+    let hitObstacle = false;
+    for (const o of obstacles) {
+      // Simple AABB collision
+      if (Math.abs(p.pos.x - o.pos.x) <= (p.half.x + o.half.x) &&
+          Math.abs(p.pos.y - o.pos.y) <= (p.half.y + o.half.y) &&
+          Math.abs(p.pos.z - o.pos.z) <= (p.half.z + o.half.z)) {
+        projectiles.splice(i, 1);
+        hitObstacle = true;
+        break;
+      }
+    }
+    if (hitObstacle) continue;
 
     if (p.life <= 0) projectiles.splice(i, 1);
   }
@@ -190,6 +213,7 @@ export const cam = {
 };
 
 let lastT = performance.now();
+let lastCamZ = 0;  // Track camera z position for distance-based scoring
 
 function renderMode7() {
 // Horizon (pitch)
@@ -283,10 +307,40 @@ function update(deltaTime) {
     cam.roll = clamp(cam.roll, -0.2, 0.2);
     cam.roll *= Math.pow(0.1, deltaTime); // auto-centre
 
+    // Speed control - Arrow Up to boost, Arrow Down to slow
+    const speedChangeRate = 30;  // units/sec acceleration
+    const minSpeed = 10;
+    const maxSpeed = 40;
+    
+    if (keys.has("ArrowUp") && ship.Energy > 0) {
+        // Boost: increase speed and consume energy
+        cam.speed = Math.min(maxSpeed, cam.speed + speedChangeRate * deltaTime);
+        ship.Energy -= 15 * deltaTime;  // Energy cost per second
+        ship.lastEnergyUseTime = 0;  // Reset regen timer
+    } else if (keys.has("ArrowDown")) {
+        // Slow down: decrease speed (no energy cost)
+        cam.speed = Math.max(minSpeed, cam.speed - speedChangeRate * deltaTime);
+    } else {
+        // Return to normal speed gradually
+        const normalSpeed = 20;
+        if (cam.speed > normalSpeed) {
+            cam.speed = Math.max(normalSpeed, cam.speed - speedChangeRate * 0.5 * deltaTime);
+        } else if (cam.speed < normalSpeed) {
+            cam.speed = Math.min(normalSpeed, cam.speed + speedChangeRate * 0.5 * deltaTime);
+        }
+    }
+
     //(ship.pos.x / 10) !!!ADD THIS TO CAMERA TO PAN IT WITH THE SHIP!!!
     cam.x += (ship.pos.x / 10) * cam.speed * deltaTime;
     ship.pos.x -= (ship.pos.x / 10) * cam.speed * deltaTime;
     cam.z += 1 * cam.speed * deltaTime;
+    
+    // Award points for distance traveled (0.1 points per unit)
+    const distanceTraveled = cam.z - lastCamZ;
+    if (distanceTraveled > 0) {
+        ship.Score += distanceTraveled * 0.1;
+        lastCamZ = cam.z;
+    }
 }
 
 function updateShip(deltaTime) {
@@ -295,7 +349,8 @@ function updateShip(deltaTime) {
     const horizontalDamping = 0.85;
 
     updateQEHolds(deltaTime);
-    ship.sideTilt = approach(ship.sideTilt, ship.sideTarget, ship.sideSpeed * deltaTime);
+    updateShipResources(deltaTime);  // Update shield and energy regeneration
+    ship.sideTilt = approachAngle(ship.sideTilt, ship.sideTarget, ship.sideSpeed * deltaTime);
 
 
     let inputX = 0;
@@ -324,12 +379,6 @@ function updateShip(deltaTime) {
     const targetPitch = clamp(-inputY * 0.2, -0.6, 0.6);
     ship.pitch = lerp(ship.pitch, targetPitch, 1 - Math.pow(horizontalDamping, deltaTime * 60));
 
-
-    
-    // Rolling rolling rolling
-    if(KeyPressed("KeyQ")) startBarrelRoll(-1);
-    if(KeyPressed("KeyE")) startBarrelRoll(1);
-
     if (ship.rollActive) {
     ship.rollT += deltaTime;
     const t = clamp(ship.rollT / ship.rollDuration, 0, 1);
@@ -357,27 +406,28 @@ function renderFrame(t) {
     const deltaTime = Math.min(0.033, (t - lastT) / 1000);
     lastT = t;
 
+    update(deltaTime);
+    handleShooting();
+    updateShip(deltaTime);
+    updateObstacles(deltaTime);
+    updateEnemies(deltaTime, enemyShots, projectiles);
+    updateProjectiles(deltaTime);
+    updateEnemyShots(deltaTime, enemyShots);
+
+    checkCollisions();
+    cullObstacles();
+
     clearWO();
     clearZ();
     clearUI();
 
-    update(deltaTime);
-    updateShip(deltaTime);
-    maybeSpawnObstacle();
-    checkCollisions();
-
-    handleShooting();
-    updateProjectiles(deltaTime);
-
     renderMode7();
     drawShipShadowScaled();
     drawObstacles();
+    drawEnemies(drawBoxObstacle);
     drawShip();
     drawProjectiles();
-
     drawUI();
-
-    cullObstacles();
 
     compositeBuffers();
     ctx.putImageData(img, 0, 0);

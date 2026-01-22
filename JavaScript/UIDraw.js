@@ -1,6 +1,6 @@
-import { packRGBA, clamp } from "./supMathFunc.js";
+import { packRGBA, clamp } from "./supportMathFuncs.js";
 import { canvasHeight, canvasWidth, UIBuffer32 } from "./main.js";
-import { ship } from "./ship.js";
+import { ship } from "./playerShip.js";
 
 ///////////////////////////// UI Draw functions ///////////////////////////
 
@@ -135,7 +135,7 @@ function drawUI() {
     // Energy text
         uiText(560, 315, "ENERGY", white, 1.5);
     // Score text
-        uiText(260, 20, `SC0RE: ${ship.Score}`, white, 3);
+        uiText(260, 20, `SC0RE: ${Math.floor(ship.Score)}`, white, 3);
 }
 
 export { drawUI };

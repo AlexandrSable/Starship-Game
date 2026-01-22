@@ -14,6 +14,14 @@ function approach(current, target, maxStep) {
     if (Math.abs(d) <= maxStep) return target;
     return current + Math.sign(d) * maxStep;
 }
+function approachAngle(current, target, maxStep) {
+    // Normalize the difference to [-π, π] for shortest path
+    let d = target - current;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    if (Math.abs(d) <= maxStep) return target;
+    return current + Math.sign(d) * maxStep;
+}
 function blink01(t, hz = 8) {
   // returns 0 or 1 (hard toggle)
   return ((t * hz) | 0) & 1;
@@ -116,8 +124,31 @@ function modelToWorld(p, ship) {
     return v3Add(r, ship.pos);
 }
 
+/////////////////////// Enemy related functions ///////////////////////////
+
+function aimAngles(from, to) {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const dz = to.z - from.z;
+
+    // yaw: rotate around Y to face target in XZ plane
+    const yaw = Math.atan2(dx, dz);
+
+    // pitch: rotate around X to face target in YZ plane
+    const distXZ = Math.hypot(dx, dz) || 1e-6;
+    const pitch = Math.atan2(dy, distXZ);
+
+    return { yaw, pitch };
+}
+
+function wrapPi(a) {    
+    while (a >  Math.PI) a -= Math.PI * 2;
+    while (a < -Math.PI) a += Math.PI * 2;
+    return a;
+}
+
 export { clamp, lerp, scale2DAbout, approach, packRGBA, dither4x4,
          unpackR, unpackG, unpackB,
          v3, v3Add, v3Sub, v3Scale, v3Dot, v3Cross, v3Normalize,
          project3D, rotateX, rotateY, rotateZ,
-         worldToCamera, modelToWorld, avg3Color, magicalUnpackAll, blink01};
+         worldToCamera, modelToWorld, avg3Color, magicalUnpackAll, blink01, approachAngle, aimAngles, wrapPi };
