@@ -359,19 +359,13 @@ function drawProjectileList(projectileList, color) {
 }
 
 function drawDrone(e) {
-    const droneScale = 2.0;  // Scale multiplier for drone mesh
     for (let i = 0; i < enemyTris.length; i++) {
         const [a,b,c] = enemyTris[i];
 
-        // Scale vertices and apply model -> world
-        const scaledA = v3(enemyVerts[a].x * droneScale, enemyVerts[a].y * droneScale, enemyVerts[a].z * droneScale);
-        const scaledB = v3(enemyVerts[b].x * droneScale, enemyVerts[b].y * droneScale, enemyVerts[b].z * droneScale);
-        const scaledC = v3(enemyVerts[c].x * droneScale, enemyVerts[c].y * droneScale, enemyVerts[c].z * droneScale);
-
-        // modelToWorld already includes e.pos, so don't add it again
-        const wa = modelToWorld(scaledA, e);
-        const wb = modelToWorld(scaledB, e);
-        const wc = modelToWorld(scaledC, e);
+        // Use e.scale property (which is set to 3.0 for drones) directly
+        const wa = modelToWorld(enemyVerts[a], e);
+        const wb = modelToWorld(enemyVerts[b], e);
+        const wc = modelToWorld(enemyVerts[c], e);
 
         // world -> camera
         const ca = worldToCamera(wa, cam);

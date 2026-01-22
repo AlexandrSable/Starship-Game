@@ -1,15 +1,124 @@
 ///////////////////////////////////////////////////////////////////////////
 // Explanation thing
+// Recomended to scale window to about 250-300%
 ///////////////////////////////////////////////////////////////////////////
+
+////////////////////////////// AUDIO HANDLING /////////////////////////////
+
+export let audioCtx = null;
+let mainMenuVolume = 0.0;
+
+export function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  // Resume audio context on user interaction (required by browsers)
+  if (audioCtx.state === 'suspended') {
+    document.addEventListener('click', () => {
+      audioCtx.resume().catch(e => console.log('Audio resume failed:', e));
+    }, { once: true });
+    document.addEventListener('keydown', () => {
+      audioCtx.resume().catch(e => console.log('Audio resume failed:', e));
+    }, { once: true });
+  }
+}
+
+initAudio();
+
+async function loadSound(url) {
+    const res = await fetch(url);
+    const arr = await res.arrayBuffer();
+    return await audioCtx.decodeAudioData(arr);
+}
+
+export const sounds = {
+    ambience: null,
+    engine: null,
+    wind: null,
+};
+
+let audioSources = {};  // Store references to playing audio sources
+
+export async function loadSounds() {
+    sounds.ambience     = await loadSound("./sfx/spaceAmbience.wav");
+    sounds.engine       = await loadSound("./sfx/engineHum.wav");
+    sounds.wind         = await loadSound("./sfx/windWhoosh.wav");
+    sounds.smallPew     = await loadSound("./sfx/smallPew.wav");
+    sounds.bigPew       = await loadSound("./sfx/BigPew.wav");
+    sounds.explosion    = await loadSound("./sfx/EXPLOSION.wav");
+    sounds.fastSwoosh   = await loadSound("./sfx/fastSwooshForDash.wav");
+}
+
+// Helper to create and store a looping sound with gain control
+function createLoopingSound(soundKey, volume = 0.5) {
+    if (!sounds[soundKey] || audioSources[soundKey]) return;  // Check if it exists
+    
+    const { src, gain } = playSoundLoop(sounds[soundKey], volume);
+    audioSources[soundKey] = { src, gain };
+}
+
+// Helper to stop a looping sound
+function stopSound(soundKey) {
+    if (audioSources[soundKey]) {
+        try {
+            audioSources[soundKey].src.stop();
+        } catch (e) {
+            // Already stopped
+        }
+        delete audioSources[soundKey];
+    }
+}
+
+export function playSoundSingular(buffer, volume = 1.0) {
+    if (!audioCtx || !buffer) return;
+
+    const src = audioCtx.createBufferSource();
+    const gain = audioCtx.createGain();
+
+    src.buffer = buffer;
+    gain.gain.value = volume;
+
+    src.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    src.start();
+}
+
+export function playSoundLoop(buffer, volume = 0.5) {
+    const src = audioCtx.createBufferSource();
+    const gain = audioCtx.createGain();
+
+    src.buffer = buffer;
+    src.loop = true;
+    gain.gain.value = volume;
+
+    src.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    src.start();
+
+    return { src, gain };
+}
+///////////////////////////// MAIN PROGRAM ////////////////////////////////
+
+(async () => {
+  try {
+    await loadSounds();
+    console.log("Sounds loaded successfully");
+    playSoundLoop(sounds.ambience, 0.05);
+  } catch (e) {
+    console.error("Failed to load sounds:", e);
+  }
+})();
 
 ////////////////////////////// IMPORT UTILITY /////////////////////////////
 
-import { clamp, lerp, approach, packRGBA, v3, approachAngle                                             } from './supportMathFuncs.js';
-import { ship, startBarrelRoll, updateShipResources                                                     } from './playerShip.js';
-import { drawUI                                                                                         } from './UIDraw.js';
-import { drawObstacles, drawShip, drawShipShadowScaled, drawProjectiles, drawEnemies, drawBoxObstacle   } from './sRasterizer.js';
-import { updateObstacles, checkCollisions, cullObstacles, obstacles                                     } from './sceneHandler.js';
-import { updateEnemies, updateEnemyShots, enemies, applyDamageToPlayer, resetLevel                      } from './enemyHandler.js';
+import { clamp, lerp, packRGBA, v3, approachAngle                                                     } from './supportMathFuncs.js';
+import { ship, startBarrelRoll, updateShipResources                                                   } from './playerShip.js';
+import { drawUI                                                                                       } from './UIDraw.js';
+import { drawObstacles, drawShip, drawShipShadowScaled, drawProjectiles, drawEnemies, drawBoxObstacle } from './sRasterizer.js';
+import { updateObstacles, checkCollisions, cullObstacles, obstacles                                   } from './sceneHandler.js';
+import { updateEnemies, updateEnemyShots, resetLevel                                                  } from './enemyHandler.js';
 
 function clearWO() {
     WOBuffer32.fill(0);
@@ -24,6 +133,10 @@ function clearSSVE() {
     SSVEBuffer32.fill(0);
 }
 
+export function GoToMenu(){
+    MAINMENUOPENED = true;
+}
+
 //////////////////////// Buffer & Global setup ////////////////////////////
 
 export let MAINMENUOPENED = true;
@@ -36,7 +149,9 @@ export const canvasWidth = canvas.width
 export const canvasHeight = canvas.height;
 
 export let deltaTime = 0;
+
 export let fpsCounter = 0;
+export let deltaTimeCounter = 0;
 
 export let bestScore = localStorage.getItem('bestScore') ? parseInt(localStorage.getItem('bestScore')) : 0;
 
@@ -108,8 +223,8 @@ function renderStars(dt) {
 
         const z = stars[ix + 2];
         if (z < 2 || stars[ix + 0] > 60 || stars[ix + 0] < -60 || stars[ix + 1] > 40 || stars[ix + 1] < -40) {
-            stars[ix + 0] = (Math.random() * 2 - 1) * 140;
-            stars[ix + 1] = (Math.random() * 2 - 1) * 122;
+            stars[ix + 0] = (Math.random() * 2 - 1) * 250;
+            stars[ix + 1] = (Math.random() * 2 - 1) * 252;
             stars[ix + 2] = 120;
         }
 
@@ -205,9 +320,9 @@ function endFrameKeys() {
 
 let prevSpace = false;
 function handleShooting() {
-  const space = keys.has("Space");
-  if (space && !prevSpace) spawnProjectile();
-  prevSpace = space;
+    const space = keys.has("Space");
+    if (space && !prevSpace) spawnProjectile();
+    prevSpace = space;
 }
 
 function spawnProjectile() {
@@ -229,6 +344,7 @@ function spawnProjectile() {
     color: PROJ_COLOR  // cyan color for player projectiles
   };
 
+  playSoundSingular(sounds.bigPew, 0.21);
   projectiles.push(p);
 }
 
@@ -472,7 +588,12 @@ function updateShip(deltaTime) {
 function renderFrame(t) {
     deltaTime = Math.min(0.033, (t - lastT) / 1000);
     lastT = t;
-    if(Math.sin(t) > 0.9) fpsCounter = 1/deltaTime;
+
+    if(Math.sin(t) > 0.9) 
+    {
+        fpsCounter = 1/deltaTime;
+        deltaTimeCounter = deltaTime;
+    }
 
     clearWO();
     clearZ();
@@ -485,6 +606,13 @@ function renderFrame(t) {
             resetLevel();
             MAINMENUOPENED = true;
         }
+        mainMenuVolume = 1.0;
+        
+        // Start game sounds when not in menu
+        if (!audioSources.ambience) createLoopingSound("ambience", 0.05);
+        if (!audioSources.engine) createLoopingSound("engine", 0.01);
+        if (!audioSources.wind) createLoopingSound("wind", 0.03);
+        
         ship.yaw = 0.0;
         ship.pos.z = 0.0;
         // Run the game
@@ -510,9 +638,16 @@ function renderFrame(t) {
     else
     {
         if (keys.has("Space")) MAINMENUOPENED = false;
+        
+        // Stop game sounds when in menu
+        stopSound("ambience");
+        stopSound("engine");
+        stopSound("wind");
+        
         // Draw Main Menu
         renderStars(deltaTime);
         ship.lightDir = v3(0, 1, -1);
+        mainMenuVolume = 0.0;
         ship.pos.x = 0;
         ship.pos.y = -0.5;
         ship.pos.z = -3.5;
@@ -521,7 +656,7 @@ function renderFrame(t) {
         ship.yaw = -70 * Math.PI / 180;
 
         ship.rollActive = true;
-        ship.rollT = 0.05;
+        ship.rollT = 0.025;
         ship.rollStart = ship.roll;
         ship.rollEnd = ship.rollStart - 0.1 * Math.PI * 2;
 

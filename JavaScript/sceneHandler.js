@@ -51,8 +51,8 @@ function spawnCorridorEnemies(zWorld, cx, cy, hw, hh) {
     const r = Math.random();
     // Spawn enemies further ahead (at zWorld + 50-80) so player can see them coming
     const spawnOffset = 50 + Math.random() * 30;
-    if (r < 0.35) spawnTurret(zWorld + spawnOffset, cx + (Math.random()*2-1)*hw*0.6);
-    else if (r < 0.70) spawnDrone(zWorld + spawnOffset, cx, cy, hh);
+    if (r < 0.20) spawnTurret(zWorld + spawnOffset, cx + (Math.random()*2-1)*hw*0.6);  // Reduced from 0.35
+    else if (r < 0.25) spawnDrone(zWorld + spawnOffset, cx, cy, hh);  // ~5% chance for drones
     // else none
 }
 
@@ -199,47 +199,52 @@ function spawnSegment(zWorld) {
 
 
 function patternCeilingBeam(zWorld, cx, cy, hw, hh) {
-  const beamW = hw * 2 + 10;
-  const beamH = 6;
-  const depth = 8;
+    const beamW = hw * 2 + 10;
+    const beamH = 6;
+    const depth = 8;
 
-  spawnBoxWorld(zWorld, cx, 10.0, beamW, beamH, depth, packRGBA(170,120,90,255));
+    spawnBoxWorld(zWorld, cx, 10.0, beamW, beamH, depth, packRGBA(170,120,90,255));
 }
 
 function patternFloorBlock(zWorld, cx, cy, hw, hh) {
-  const w = hw * 2 + 10;
-  const h = 3;
-  const depth = 8;
+    const w = hw * 2 + 10;
+    const h = 3;
+    const depth = 8;
 
-  spawnBoxWorld(zWorld, cx, 0.0, w, h, depth, packRGBA(110,160,110,255));
+    spawnBoxWorld(zWorld, cx, 0.0, w, h, depth, packRGBA(110,160,110,255));
 }
 
 function patternRollGate(zWorld, cx, cy, hw, hh) {
-  const gateH = hh * 2 + 16;
-  const gateW = 29;
-  const depth = 7;
+    const gateH = hh * 2 + 16;
+    const gateW = 29;
+    const depth = 7;
 
-  const gapW  = 3.0;
-  const slabW = (gateW - gapW) * 0.5;
+    const gapW  = 3.0;
+    const slabW = (gateW - gapW) * 0.5;
 
-  const leftX  = cx - (gapW * 0.5 + slabW * 0.5);
-  const rightX = cx + (gapW * 0.5 + slabW * 0.5);
+    const leftX  = cx - (gapW * 0.5 + slabW * 0.5);
+    const rightX = cx + (gapW * 0.5 + slabW * 0.5);
 
-  spawnBoxWorld(zWorld, leftX,  0.0, slabW, gateH, depth, packRGBA(160,110,180,255));
-  spawnBoxWorld(zWorld, rightX, 0.0, slabW, gateH, depth, packRGBA(160,110,180,255));
+    spawnBoxWorld(zWorld, leftX,  0.0, slabW, gateH, depth, packRGBA(160,110,180,255));
+    spawnBoxWorld(zWorld, rightX, 0.0, slabW, gateH, depth, packRGBA(160,110,180,255));
 }
 
 function patternPylons(zWorld, cx, cy, hw, hh) {
-  const pillarW = 10;
-  const pillarH = 50;
-  const depth   = 8;
+    const pillarW = 10;
+    const pillarH = 50;
+    const depth   = 8;
 
-  const leftX  = cx - hw - pillarW * 0.5;
-  const rightX = cx + hw + pillarW * 0.5;
+    const leftX  = cx - hw - pillarW * 0.5;
+    const rightX = cx + hw + pillarW * 0.5;
 
-  spawnBoxWorld(zWorld, leftX,  0.0, pillarW, pillarH, depth, packRGBA(140,140,160,255));
-  spawnBoxWorld(zWorld, rightX, 0.0, pillarW, pillarH, depth, packRGBA(140,140,160,255));
+    spawnBoxWorld(zWorld, leftX,  0.0, pillarW, pillarH, depth, packRGBA(140,140,160,255));
+    spawnBoxWorld(zWorld, rightX, 0.0, pillarW, pillarH, depth, packRGBA(140,140,160,255));
 }
+
+export function resetSceneSpawner() {
+    nextSpawnZ = 100;  // Reset spawn position to start of level
+}
+
 export {
     checkCollisions,
     cullObstacles

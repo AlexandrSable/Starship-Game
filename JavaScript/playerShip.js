@@ -1,4 +1,5 @@
 import { v3, packRGBA } from "./supportMathFuncs.js";
+import { playSoundSingular, sounds} from "./main.js";
 
 /////////////////////////// Ship State Object //////////////////////////////
 export const ship = {
@@ -55,6 +56,8 @@ export function startBarrelRoll(dir) {
 
     ship.Energy -= 1;  // Consume energy
     ship.lastEnergyUseTime = 0;  // Reset energy regen timer
+
+    playSoundSingular(sounds.fastSwoosh, 0.25);
 
     ship.rollActive = true;
     ship.rollDir = dir;

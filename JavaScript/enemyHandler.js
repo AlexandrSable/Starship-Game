@@ -1,7 +1,7 @@
 import { v3, packRGBA, clamp, aimAngles, approachAngle} from "./supportMathFuncs.js";
-import { cam, projectiles, enemyShots, resetBestScore, bestScore} from "./main.js";
+import { cam, projectiles, enemyShots, resetBestScore, bestScore, GoToMenu, playSoundSingular, sounds } from "./main.js";
 import { ship } from "./playerShip.js";
-import { obstacles } from "./sceneHandler.js";
+import { obstacles, resetSceneSpawner } from "./sceneHandler.js";
 
 export const enemies = [];
 
@@ -118,21 +118,25 @@ export function spawnTurret(zWorld, cx) {
 
 export function spawnDrone(zWorld, cx, cy, hh) {
     const w = 3.2, h = 2.2, d = 3.2;
+    // Spawn drones high up and far behind camera so they fly into view from the sky
+    const spawnHeight = cam.height + 30;  // Spawn high above the camera
+    const spawnZ = cam.z + 400;  // Spawn much further behind camera for longer approach time
+    
     enemies.push({
         type: "drone",
         pos: v3(
-            cx + (Math.random()*2-1) * 6,
-            clamp(cy + (Math.random()*2-1) * (hh*0.8), -10, 12),
-            zWorld
+            cx,
+            spawnHeight,
+            spawnZ
         ),
         yaw: 0,
         pitch: 0,
         roll: 0,
-        scale: 1.0,
+        scale: 3.5,
         sideTilt: 0,
         dmg: 1,
         shotSpeed: 60,
-        fireRate: 0.65,  // seconds between shots
+        fireRate: 1.5,  // seconds between shots
         cooldown: 0.2,  // fire sooner on spawn
         vel: v3(0,0,0),
         half: v3(w*0.5, h*0.5, d*0.5),
@@ -150,9 +154,17 @@ export function updateEnemies(dt, enemyShots, playerShots) {
     for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
 
-        // despawn behind camera - turrets disappear quickly, drones sooner
-        const despawnDist = (e.type === "turret") ? 15 : 40;
-        if (e.pos.z < cam.z - despawnDist) { enemies.splice(i,1); continue; }
+        // despawn behind camera - only for turrets that drift back, drones stay in front
+        if (e.type === "turret") {
+            const despawnDist = 15;
+            if (e.pos.z < cam.z - despawnDist) { enemies.splice(i,1); continue; }
+        } else if (e.type === "drone") {
+            // Drones never despawn on Z, but despawn if too far to the side or down
+            if (Math.abs(e.pos.x - cam.x) > 100 || e.pos.y < -20) {
+                enemies.splice(i,1); 
+                continue; 
+            }
+        }
 
         // --- rotate toward player ---
         if (e.type === "turret") {
@@ -167,36 +179,61 @@ export function updateEnemies(dt, enemyShots, playerShots) {
             e.pitch = -Math.PI * 0.5;  // -90 degrees to point forward correctly
             e.roll = 0;   
             e.sideTilt = 0;  
-        } else {
-            // Drones track full 3D position
-            const ang = aimAngles(e.pos, player);
+        } else if (e.type === "drone") {
+            // Drones face toward the player - same as turrets
+            const dx = player.x - e.pos.x;
+            const dz = player.z - e.pos.z;
+            const targetYaw = Math.atan2(dx, dz);
+            
             const turn = 5.0;
-            e.yaw   = approachAngle(e.yaw,   ang.yaw,   turn * dt);
-            e.pitch = approachAngle(e.pitch, ang.pitch, turn * dt);
+            e.yaw   = approachAngle(e.yaw, targetYaw, turn * dt);
+            e.pitch = -Math.PI * 0.5;  // Point forward correctly
+            e.roll = 0;
+            e.sideTilt = 0;
         }
 
         // --- movement for drones ---
         if (e.type === "drone") {
-            // follow player at roughly player speed (match cam speed feel)
-            const followStrength = 1.8; // tune
-            const maxVel = 30;
-
-            e.vel.x += clamp((player.x - e.pos.x) * followStrength, -maxVel, maxVel) * dt;
-            e.vel.y += clamp((player.y - e.pos.y) * followStrength, -maxVel, maxVel) * dt;
-
-            // keep drones near player z (same forward speed as player)
-            // easiest: glue them to a fixed z offset relative to camera
-            // OR just move them forward at cam speed:
-            e.pos.z += cam.speed * dt;
-
-            // damping
-            e.vel.x *= Math.pow(0.82, dt*60);
-            e.vel.y *= Math.pow(0.82, dt*60);
-
-            e.pos.x += e.vel.x * dt;
-            e.pos.y += e.vel.y * dt;
-
-            e.pos.y = clamp(e.pos.y, -10, 12);
+            // Drones fly towards the player from their spawn position
+            // Target position: in front of and at the same height as player
+            const desiredZOffset = 50;  
+            const targetX = cam.x;
+            const targetZ = cam.z + desiredZOffset;
+            
+            // Vary Y position sinusoidally around camera height
+            const yOffset = Math.sin(e.phase + performance.now() * 0.001) * 5;  // Varies -5 to 5
+            const targetY = cam.height + yOffset;
+            
+            // Smooth approach to target position (flying towards player)
+            const moveSpeed = 55;  // How quickly they fly towards target
+            const driftX = clamp(targetX - e.pos.x, -moveSpeed, moveSpeed);
+            const driftY = clamp(targetY - e.pos.y, -moveSpeed, moveSpeed);
+            const driftZ = clamp(targetZ - e.pos.z, -moveSpeed, moveSpeed);  // Match speed on all axes
+            
+            // Test new position before applying
+            const newPosX = e.pos.x + driftX * dt;
+            const newPosY = e.pos.y + driftY * dt;
+            const newPosZ = e.pos.z + driftZ * dt;
+            const testPosY = clamp(newPosY, -10, 12);
+            
+            // Check if new position would collide with obstacles
+            let canMove = true;
+            for (const o of obstacles) {
+                if (aabbHit({x: newPosX, y: testPosY, z: newPosZ}, e.half, o.pos, o.half)) {
+                    canMove = false;
+                    break;
+                }
+            }
+            
+            // Only apply movement if no collision
+            if (canMove) {
+                e.pos.x = newPosX;
+                e.pos.y = testPosY;
+                e.pos.z = newPosZ;
+            } else {
+                // Kill drone if trapped in obstacle
+                e.hp = 0;
+            }
         }
 
         // --- shooting ---
@@ -207,7 +244,10 @@ export function updateEnemies(dt, enemyShots, playerShots) {
             // shoot if within range and has line of sight
             const dist = Math.hypot(player.x - e.pos.x, player.y - e.pos.y, player.z - e.pos.z);
 
-            if (dist < 150 && hasLineOfSight(e.pos, player)) {
+            // For drones, only shoot if they're in front of the player (pos.z > cam.z) and not too close
+            const canShoot = (e.type === "drone") ? (e.pos.z > cam.z && dist > 20) : true;
+
+            if (canShoot && dist < 150 && hasLineOfSight(e.pos, player)) {
                 const dir = dirTo(e.pos, player);
                 spawnEnemyShot(e, dir, enemyShots);
             }
@@ -223,6 +263,8 @@ export function updateEnemies(dt, enemyShots, playerShots) {
                     // Award points based on enemy type
                     const pointsValue = (e.type === "turret") ? 50 : 25;
                     ship.Score += pointsValue;
+                    // Play explosion sound
+                    playSoundSingular(sounds.explosion, 0.3);
                     enemies.splice(i, 1);
                     break; // enemy is dead, stop checking
                 }
@@ -269,6 +311,9 @@ export function updateEnemyShots(dt, enemyShots) {
 function spawnEnemyShot(enemy, dir, enemyShots) {
     const speed = enemy.shotSpeed;
     console.log("Enemy shot fired");
+    
+    // Play enemy shoot sound
+    playSoundSingular(sounds.smallPew, 0.2);
 
     // Calculate yaw and pitch from direction vector
     // The projectile model points forward along +Z at pitch=π/2, yaw=0
@@ -319,6 +364,7 @@ function onPlayerDeath() {
     console.log("Player died! Resetting level...");
     resetBestScore(Math.max(bestScore, Math.floor(ship.Score)));
     resetLevel();
+    GoToMenu();
 }
 
 export function resetLevel() {
@@ -350,4 +396,7 @@ export function resetLevel() {
     cam.z = 0;
     cam.pitch = 0;
     cam.roll = 0;
+    
+    // Reset scene spawner
+    resetSceneSpawner();
 }

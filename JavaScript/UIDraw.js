@@ -1,5 +1,5 @@
 import { packRGBA, clamp                                                                         } from "./supportMathFuncs.js";
-import { canvasHeight, canvasWidth, UIBuffer32, MAINMENUOPENED, fpsCounter, deltaTime, bestScore } from "./main.js";
+import { canvasHeight, canvasWidth, UIBuffer32, MAINMENUOPENED, fpsCounter, deltaTimeCounter, bestScore } from "./main.js";
 import { ship                                                                                    } from "./playerShip.js";
 
 ///////////////////////////// UI Draw functions ///////////////////////////
@@ -121,12 +121,12 @@ function uiText(x, y, text, col, scale = 2, spacing = 1) {
 
 
 function drawUI(Time) {
-    const white = packRGBA(245, 245, 245, 255);
-    const highlight = packRGBA(200, 200, 255, 255);
+    const white = packRGBA(255, 255, 255, 255);
+    const highlight = packRGBA(255, 150, 255, 255);
     // Check if main menu is not opened or opened
 
     uiText(10, 10, `FPS:${Math.floor(fpsCounter)}`, white, 1);
-    uiText(10, 18, `DT:${(deltaTime.toFixed(3)) * 1000} ms`, white, 1);
+    uiText(10, 18, `DT:${(deltaTimeCounter.toFixed(3)) * 1000} ms`, white, 1);
     uiText(10, 26, `BEST SCORE:${bestScore}`, white, 1);
 
     if (!MAINMENUOPENED) {
