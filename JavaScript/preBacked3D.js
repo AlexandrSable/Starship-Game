@@ -147,7 +147,7 @@ export const shipVerts = [
   { x: 0, y: 0.55, z: -1.05 },
   { x: -2.6, y: -0.15, z: -7.75 },
   { x: -1.7, y: -0.15, z: -7.65 },
-  ];
+];
 
 export const shipTris = [
   [0, 1, 2],
@@ -336,7 +336,7 @@ export const shipTris = [
   [124, 140, 132],
   [125, 141, 114],
   [123, 128, 114],
-  ];
+];
 
 export const shipVCol = new Uint32Array([
   0xff1e1cbf,
@@ -484,7 +484,7 @@ export const shipVCol = new Uint32Array([
   0xff9fa0a3,
   0xff1e1cbf,
   0xff9fa0a3,
-  ]);
+]);
 
 export const boxVerts = [
   v3(-1,-1,-1), v3( 1,-1,-1), v3( 1, 1,-1), v3(-1, 1,-1), // back  (z-)

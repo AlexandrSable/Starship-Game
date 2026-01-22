@@ -12,6 +12,7 @@ export const ship = {
     yVel: 0,
     // Camera parameters
     toCamDist: 12.0,
+    lightDir: v3(0, 1, 0),
     // Barrel roll/tilt parameters
     rollActive: false,
     rollDir: 0,
@@ -38,13 +39,13 @@ export const ship = {
 };
 
 export const idle = {
-  bobAmpY: 0.25,
-  bobAmpX: 0.15,
+  bobAmpY: 0.1,
+  bobAmpX: 0.1,
   bobHz:   0.8,
 
-  rotAmpPitch: 0.06,
-  rotAmpYaw:   0.05,
-  rotAmpRoll:  0.04,
+  rotAmpPitch: 0.03,
+  rotAmpYaw:   0.02,
+  rotAmpRoll:  0.02,
   rotHz:       0.9,
 };
 

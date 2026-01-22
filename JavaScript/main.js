@@ -8,8 +8,8 @@ import { clamp, lerp, approach, packRGBA, v3, approachAngle                     
 import { ship, startBarrelRoll, updateShipResources                                                     } from './playerShip.js';
 import { drawUI                                                                                         } from './UIDraw.js';
 import { drawObstacles, drawShip, drawShipShadowScaled, drawProjectiles, drawEnemies, drawBoxObstacle   } from './sRasterizer.js';
-import { updateObstacles, checkCollisions, cullObstacles, obstacles                                    } from './sceneHandler.js';
-import { updateEnemies, updateEnemyShots, enemies, applyDamageToPlayer                                } from './enemyHandler.js';
+import { updateObstacles, checkCollisions, cullObstacles, obstacles                                     } from './sceneHandler.js';
+import { updateEnemies, updateEnemyShots, enemies, applyDamageToPlayer                                  } from './enemyHandler.js';
 
 function clearWO() {
     WOBuffer32.fill(0);
@@ -22,6 +22,8 @@ function clearZ() {
 }
 
 //////////////////////// Buffer & Global setup ////////////////////////////
+
+export let MAINMENUOPENED = true;
 
 const canvas = document.getElementById("FinalRender");
 const ctx = canvas.getContext("2d", { alpha: false });
@@ -47,8 +49,16 @@ const PROJ_SPEED = 110;
 const PROJ_LIFE  = 2.2;
 export const PROJ_COLOR = packRGBA(10, 220, 255, 255);
 
-//////////////////////// Procedural Ground Texture ////////////////////////
+////////////////// Procedural Ground and SpAcE Textures ///////////////////
 
+function bitShiftRNG(seed) {
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    return seed;
+}
+
+// Ground Texture
 const TEX = 256;
 const tex = new Uint32Array(TEX * TEX);
 for (let y = 0; y < TEX; y++) {
@@ -64,6 +74,41 @@ for (let y = 0; y < TEX; y++) {
     }
 }
 
+// Starfield Texture (for main menu of course)
+const STAR_COUNT = 800;
+const stars = new Float32Array(STAR_COUNT * 6);
+
+const STAR_DRIFT_X = 10.0;
+const STAR_DRIFT_Y = 6.0;
+
+function renderStars(dt) {
+    BGBuffer32.fill(packRGBA(0, 0, 8, 255));
+
+    const speedZ = 10;
+    for (let i = 0; i < STAR_COUNT; i++) {
+        let StartColor = packRGBA(bitShiftRNG(i) * 255, bitShiftRNG(i) * 255, bitShiftRNG(i) * 255, 255);
+        const ix = i * 3;
+        stars[ix + 2] -= speedZ * dt;
+        stars[ix + 0] += STAR_DRIFT_X * dt; 
+        stars[ix + 1] -= STAR_DRIFT_Y * dt; 
+
+        const z = stars[ix + 2];
+        if (z < 2 || stars[ix + 0] > 60 || stars[ix + 0] < -60 || stars[ix + 1] > 40 || stars[ix + 1] < -40) {
+            stars[ix + 0] = (Math.random() * 2 - 1) * 140;
+            stars[ix + 1] = (Math.random() * 2 - 1) * 122;
+            stars[ix + 2] = 120;
+        }
+
+        const sx = (stars[ix + 0] / z) * fovPx*3 + cx;
+        const sy = (stars[ix + 1] / z) * -fovPx*3 + cy;
+
+        const x = sx | 0;
+        const y = sy | 0;
+        if (x < 0 || x >= canvasWidth || y < 0 || y >= canvasHeight) continue;
+
+        BGBuffer32[y * canvasWidth + x] = StartColor;
+    }
+}
 
 ///////////////////////////// INPUT HANDLING //////////////////////////////
 
@@ -405,29 +450,56 @@ function updateShip(deltaTime) {
 function renderFrame(t) {
     const deltaTime = Math.min(0.033, (t - lastT) / 1000);
     lastT = t;
-
-    update(deltaTime);
-    handleShooting();
-    updateShip(deltaTime);
-    updateObstacles(deltaTime);
-    updateEnemies(deltaTime, enemyShots, projectiles);
-    updateProjectiles(deltaTime);
-    updateEnemyShots(deltaTime, enemyShots);
-
-    checkCollisions();
-    cullObstacles();
+    console.log(deltaTime);
 
     clearWO();
     clearZ();
     clearUI();
 
-    renderMode7();
-    drawShipShadowScaled();
-    drawObstacles();
-    drawEnemies(drawBoxObstacle);
-    drawShip();
-    drawProjectiles();
-    drawUI();
+    if(!MAINMENUOPENED){
+        // Run the game
+        ship.lightDir = (0, 1, 0);
+        update(deltaTime);
+        handleShooting();
+        updateShip(deltaTime);
+        updateObstacles(deltaTime);
+        updateEnemies(deltaTime, enemyShots, projectiles);
+        updateProjectiles(deltaTime);
+        updateEnemyShots(deltaTime, enemyShots);
+
+        checkCollisions();
+        cullObstacles();
+
+        renderMode7();
+        drawShipShadowScaled();
+        drawObstacles();
+        drawEnemies(drawBoxObstacle);
+        drawShip();
+        drawProjectiles();
+        drawUI();
+
+    }
+    else
+    {
+        // Draw Main Menu
+        renderStars(deltaTime);
+        ship.lightDir = v3(0, 1, -1);
+        ship.pos.x = 0;
+        ship.pos.y = -0.5;
+        ship.pos.z = -3.5;
+
+        ship.pitch = -45 * Math.PI / 180;
+        ship.yaw = -70 * Math.PI / 180;
+
+        ship.rollActive = true;
+        ship.rollT = 0.05;
+        ship.rollStart = ship.roll;
+        ship.rollEnd = ship.rollStart - 0.1 * Math.PI * 2;
+
+        updateShip(deltaTime);
+        drawShip();
+        drawUI();
+    }
 
     compositeBuffers();
     ctx.putImageData(img, 0, 0);

@@ -1,6 +1,6 @@
-import { packRGBA, clamp } from "./supportMathFuncs.js";
-import { canvasHeight, canvasWidth, UIBuffer32 } from "./main.js";
-import { ship } from "./playerShip.js";
+import { packRGBA, clamp                                        } from "./supportMathFuncs.js";
+import { canvasHeight, canvasWidth, UIBuffer32, MAINMENUOPENED  } from "./main.js";
+import { ship                                                   } from "./playerShip.js";
 
 ///////////////////////////// UI Draw functions ///////////////////////////
 
@@ -71,9 +71,11 @@ const FONT4x6 = {
     "H": [0b1001,0b1001,0b1111,0b1001,0b1001,0b1001],
     "I": [0b1110,0b0100,0b0100,0b0100,0b0100,0b1110],
     "L": [0b0100,0b0100,0b0100,0b0100,0b0100,0b0111],
+    "M": [0b1001,0b1111,0b1111,0b1001,0b1001,0b1001],
     "N": [0b1001,0b1101,0b1101,0b1011,0b1001,0b1001],
     "P": [0b1110,0b1001,0b1110,0b1000,0b1000,0b1000],
     "R": [0b1110,0b1001,0b1110,0b1010,0b1001,0b1001],
+    "T": [0b1111,0b0100,0b0100,0b0100,0b0100,0b0100],
     "S": [0b0111,0b1000,0b1111,0b0001,0b0001,0b1110],
     "U": [0b1001,0b1001,0b1001,0b1001,0b1001,0b0110],
     "V": [0b1001,0b1001,0b1001,0b1001,0b0110,0b0100],
@@ -119,23 +121,33 @@ function uiText(x, y, text, col, scale = 2, spacing = 1) {
 
 function drawUI() {
     const white = packRGBA(245, 245, 245, 255);
-    // Shield (HP) bar
-        const ShieldbarX = 20, ShieldbarY = 330, ShieldbarW = 80, ShieldbarH = 12;
-        uiRectOutline(ShieldbarX - 2, ShieldbarY - 2, ShieldbarW + 4, ShieldbarH + 4, packRGBA(200, 200, 200, 255));
-        uiRect(ShieldbarX, ShieldbarY, ShieldbarW, ShieldbarH, packRGBA(100, 100, 100, 255));
-        uiRect(ShieldbarX, ShieldbarY, ((ShieldbarW * clamp(ship.Shield, 0, 100)) / 5) | 0, ShieldbarH, packRGBA(60, 155, 255, 255));
-    // Energy bar 
-        const barX = 540, barY = 330, barW = 80, barH = 12;
-        uiRectOutline(barX - 2, barY - 2, barW + 4, barH + 4, packRGBA(200, 200, 200, 255));
-        uiRect(barX, barY, barW, barH, packRGBA(100, 100, 100, 255));
-        uiRect(barX, barY, ((barW * clamp(ship.Energy, 0, 100)) / 5) | 0, barH, packRGBA(120, 100, 210, 255));
+    // Check if main menu is not opened or opened
+    if (!MAINMENUOPENED) {
+        // Shield (HP) bar
+            const ShieldbarX = 20, ShieldbarY = 330, ShieldbarW = 80, ShieldbarH = 12;
+            uiRectOutline(ShieldbarX - 2, ShieldbarY - 2, ShieldbarW + 4, ShieldbarH + 4, packRGBA(200, 200, 200, 255));
+            uiRect(ShieldbarX, ShieldbarY, ShieldbarW, ShieldbarH, packRGBA(100, 100, 100, 255));
+            uiRect(ShieldbarX, ShieldbarY, ((ShieldbarW * clamp(ship.Shield, 0, 100)) / 5) | 0, ShieldbarH, packRGBA(60, 155, 255, 255));
+        // Energy bar 
+            const barX = 540, barY = 330, barW = 80, barH = 12;
+            uiRectOutline(barX - 2, barY - 2, barW + 4, barH + 4, packRGBA(200, 200, 200, 255));
+            uiRect(barX, barY, barW, barH, packRGBA(100, 100, 100, 255));
+            uiRect(barX, barY, ((barW * clamp(ship.Energy, 0, 100)) / 5) | 0, barH, packRGBA(120, 100, 210, 255));
 
-    // Shield text
-        uiText(40, 315, "SHIELD", white, 1.5);
-    // Energy text
-        uiText(560, 315, "ENERGY", white, 1.5);
-    // Score text
-        uiText(260, 20, `SC0RE: ${Math.floor(ship.Score)}`, white, 3);
+        // Shield text
+            uiText(40, 315, "SHIELD", white, 1.5);
+        // Energy text
+            uiText(560, 315, "ENERGY", white, 1.5);
+        // Score text
+            uiText(260, 20, `SC0RE: ${Math.floor(ship.Score)}`, white, 3);
+    }
+    else
+    {
+        // Draw Main Menu UI
+        uiText(200, 100, "STARSHIP", white, 3);
+        uiText(200, 150, "GAME", white, 3);
+        uiText(200, 250, "Press SPACE to start", white, 1.5);
+    }
 }
 
 export { drawUI };

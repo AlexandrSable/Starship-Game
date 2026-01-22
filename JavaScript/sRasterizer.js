@@ -180,11 +180,9 @@ function drawShip() {
         const e2 = v3Sub(cc, ca);
         let n = v3Normalize(v3Cross(e1, e2));
 
-        const lightDir = v3(0, 1, 0);
-
         // Lambert + ambient
         const ambient = 0.5;
-        let ndl = clamp(v3Dot(n, lightDir), 0, 1);
+        let ndl = clamp(v3Dot(n, ship.lightDir), 0, 1);
         if( magicalUnpackAll(shipVCol[a]).r < 10 && 
         magicalUnpackAll(shipVCol[a]).g >= 240 && 
         magicalUnpackAll(shipVCol[a]).b >= 240)

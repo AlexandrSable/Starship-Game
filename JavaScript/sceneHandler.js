@@ -7,7 +7,7 @@ import { spawnTurret, spawnDrone } from "./enemyHandler.js";
 ///////////////////////// Gameplay functionality //////////////////////////
 
 export const obstacles = [];
-let nextSpawnZ = 50;  // Start generation further ahead to give player time at start
+let nextSpawnZ = 100;  // Start generation further ahead to give player time at start
 
 const spawnAhead = 300;    // how far ahead we maintain content
 const despawnBehind = 30;  // remove when behind camera
@@ -216,8 +216,8 @@ function patternFloorBlock(zWorld, cx, cy, hw, hh) {
 
 function patternRollGate(zWorld, cx, cy, hw, hh) {
   const gateH = hh * 2 + 16;
-  const gateW = 30;
-  const depth = 8;
+  const gateW = 29;
+  const depth = 7;
 
   const gapW  = 3.0;
   const slabW = (gateW - gapW) * 0.5;

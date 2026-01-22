@@ -93,7 +93,7 @@ function aabbHit(aPos, aHalf, bPos, bHalf) {
 
 export function spawnTurret(zWorld, cx) {
     // sits on ground
-    const w = 3, h = 6, d = 3;
+    const w = 5, h = 10, d = 3;
     enemies.push({
         type: "turret",
         pos: v3(cx, 0, zWorld),  // Sit on ground level (y=0)
@@ -102,7 +102,7 @@ export function spawnTurret(zWorld, cx) {
         roll: 0,
         scale: 1.0,
         sideTilt: 0,
-        dmg: 2,
+        dmg: 1,
         shotSpeed: 50,
         fireRate: 0.9,  // seconds between shots
         cooldown: 0.3,  // fire sooner on spawn
@@ -237,8 +237,9 @@ export function updateEnemyShots(dt, enemyShots) {
 
     for (let i = enemyShots.length - 1; i >= 0; i--) {
         const s = enemyShots[i];
-
-        s.life -= dt;
+        
+        if (!s) continue;  // Safety check in case array was cleared
+        if(s.life != null) s.life -= dt;
         if (s.life <= 0) { enemyShots.splice(i,1); continue; }
 
         s.pos.x += s.vel.x * dt;
@@ -306,7 +307,7 @@ export function applyDamageToPlayer(damage) {
     // Import ship at the top if not already done
     ship.Shield -= damage;
     ship.lastDamageTime = 0;  // Reset damage timer for regeneration delay
-    console.log(`Player took ${damage} damage! Shield: ${Math.max(0, ship.Shield)}/${ship.ShieldMax}`);
+    //console.log(`Player took ${damage} damage! Shield: ${Math.max(0, ship.Shield)}/${ship.ShieldMax}`);
     
     // Check if player is dead
     if (ship.Shield <= 0) {
@@ -329,6 +330,7 @@ export function resetLevel() {
     ship.roll = 0;
     ship.sideTilt = 0;
     ship.rollActive = false;
+    ship.Score = 0;
     
     // Reset resources
     ship.Shield = ship.ShieldMax;
