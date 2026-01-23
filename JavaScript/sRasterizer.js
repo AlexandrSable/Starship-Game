@@ -1,12 +1,22 @@
+//////////////////////////// sRasterizer.js ////////////////////////////////
+// Software Rasterizer functions for Starship Game
+// I could have reused rasterization function to draw different 
+// meshed with a single function, but it was a bit easier to do it
+// separately for clarity (it was easier for me this way).
+//
+// By Alexandr Soboliev (mostly)
+////////////////////////////////////////////////////////////////////////////
+
+
 import {v3, v3Add, v3Sub, v3Cross, v3Dot, v3Normalize, scale2DAbout,
         packRGBA, unpackR, unpackG, unpackB, clamp, dither4x4, 
         modelToWorld, worldToCamera, project3D, avg3Color, magicalUnpackAll, blink01} from "./supportMathFuncs.js";
 
 import { canvasWidth, canvasHeight, WOBuffer32, zbuf, cam, fovPx, cx, cy, projectiles, enemyShots, PROJ_COLOR} from "./main.js";
-import { obstacles } from "./sceneHandler.js";
-import { enemies } from "./enemyHandler.js";
+import { obstacles } from "./sceneManager.js";
+import { enemies } from "./enemyManager.js";
 import { ship, idle } from "./playerShip.js";
-import { shipVerts, shipTris, shipVCol, boxVerts, boxTris, projVerts, projTris, enemyVerts, enemyTris, enemyVCol, turretVerts, turretTris, turretVCol } from "./preBacked3D.js";
+import { shipVerts, shipTris, shipVCol, boxVerts, boxTris, projVerts, projTris, enemyVerts, enemyTris, enemyVCol, turretVerts, turretTris, turretVCol } from "./preBaked3D.js";
 //////////////////////////// RASTERIZATION ////////////////////////////////
 
 /////////////////////////// Helper functions //////////////////////////////
@@ -88,7 +98,7 @@ function drawShadowTri2D(p0, p1, p2, darkness01) {
     const minY = Math.max(0, Math.floor(Math.min(y0,y1,y2)));
     const maxY = Math.min(canvasHeight-1, Math.ceil (Math.max(y0,y1,y2)));
 
-    // darkness01: 0..1 (higher = darker = more pixels drawn)
+    // darkness01: 0 -> 1 (higher = darker = more pixels drawn)
     darkness01 = clamp(darkness01, 0, 1);
 
     for (let y=minY; y<=maxY; y++) {
@@ -120,7 +130,6 @@ function drawShadowTri2D(p0, p1, p2, darkness01) {
 ///////////////////////// Draw Pre-backed meshes //////////////////////////
 
 function getShipRenderPose(timeSec) {
-    // Use two sine waves with different phases so it feels “alive”
     const s1 = Math.sin(timeSec * Math.PI * 2 * idle.bobHz);
     const s2 = Math.sin(timeSec * Math.PI * 2 * (idle.bobHz * 1.37) + 1.2);
 
@@ -138,14 +147,13 @@ function getShipRenderPose(timeSec) {
     pose.pos.y += idle.bobAmpY * s1;
     pose.pos.x += idle.bobAmpX * s2;
 
-    // --- tiny rotation drift ---
+    // --- otation drift ---
     const r1 = Math.sin(timeSec * Math.PI * 2 * idle.rotHz);
     const r2 = Math.sin(timeSec * Math.PI * 2 * (idle.rotHz * 1.21) + 0.7);
 
     pose.pitch += idle.rotAmpPitch * r1;
     pose.yaw   += idle.rotAmpYaw   * r2;
 
-    // Don’t mess with your banking too much; just a little extra “flutter”
     pose.roll  += idle.rotAmpRoll  * (0.6 * r1 + 0.4 * r2);
 
     return pose;
@@ -238,7 +246,7 @@ function drawShipShadowScaled() {
 
     const h = shipWorldCenter.y - groundY;
 
-    let s = 1.0 / (1.0 + h * 0.1);     // 0.12 to 0.30 best
+    let s = 1.0 / (1.0 + h * 0.1);
     s = clamp(s, 0.8, 1.0);            // CLAMP!
 
     // Shrinkification fasctor 
@@ -272,7 +280,7 @@ function drawShipShadowScaled() {
         let pb = project3D(cb, fovPx, cx, cy);
         let pc2 = project3D(cc2, fovPx, cx, cy);
 
-        // *** shrink around anchor ***
+        // --- shrink around anchor ---
         pa = scale2DAbout(pa, ax, ay, s);
         pb = scale2DAbout(pb, ax, ay, s);
         pc2 = scale2DAbout(pc2, ax, ay, s);
@@ -320,9 +328,9 @@ function drawObstacles() {
 }
 
 function drawProjectiles() {
-    // Draw player projectiles (cyan color)
+    // Draw player projectiles with blue color
     drawProjectileList(projectiles, PROJ_COLOR);
-    // Draw enemy projectiles (orange/red color)
+    // Draw enemy projectiles with orange color 
     drawProjectileList(enemyShots, packRGBA(255, 130, 60, 255));
 }
 
@@ -350,9 +358,9 @@ function drawProjectileList(projectileList, color) {
             // Use simple lighting - face toward camera
             const n = v3Normalize(v3Cross(v3Sub(cb, ca), v3Sub(cc, ca)));
             const camDir = v3Normalize(ca);
-            const light = Math.max(1.0, v3Dot(n, camDir));  // min 30% brightness
+            const light = Math.max(1.0, v3Dot(n, camDir));  // 100% BRIGHTNESS!!!
 
-            // Draw with brightness modulation
+            // Draw with brightness
             drawTriZ_Shaded(pa, pb, pc, color, light);
         }
     }
@@ -362,7 +370,7 @@ function drawDrone(e) {
     for (let i = 0; i < enemyTris.length; i++) {
         const [a,b,c] = enemyTris[i];
 
-        // Use e.scale property (which is set to 3.0 for drones) directly
+        // Use e.scale property 
         const wa = modelToWorld(enemyVerts[a], e);
         const wb = modelToWorld(enemyVerts[b], e);
         const wc = modelToWorld(enemyVerts[c], e);
@@ -406,7 +414,7 @@ function drawTurret(e) {
         const scaledB = v3(turretVerts[b].x * turretScale, turretVerts[b].y * turretScale, turretVerts[b].z * turretScale);
         const scaledC = v3(turretVerts[c].x * turretScale, turretVerts[c].y * turretScale, turretVerts[c].z * turretScale);
 
-        // modelToWorld already includes e.pos, so don't add it again
+        // model -> World 
         const wa = modelToWorld(scaledA, e);
         const wb = modelToWorld(scaledB, e);
         const wc = modelToWorld(scaledC, e);
@@ -453,7 +461,7 @@ function drawEnemies(drawBoxFn) {
         } else if (e.type === "turret") {
             drawTurret(e);
         } else {
-            drawBoxFn(e);  // fallback for unknown types
+            drawBoxFn(e);
         }
     }
 }

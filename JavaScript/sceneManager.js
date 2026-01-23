@@ -1,7 +1,7 @@
 import { v3, packRGBA, clamp, v3Add, rotateX, rotateY, rotateZ } from "./supportMathFuncs.js";
 import { cam } from "./main.js";
 import { ship } from "./playerShip.js";
-import { spawnTurret, spawnDrone } from "./enemyHandler.js";
+import { spawnTurret, spawnDrone } from "./enemyManager.js";
 
 
 ///////////////////////// Gameplay functionality //////////////////////////
@@ -9,24 +9,22 @@ import { spawnTurret, spawnDrone } from "./enemyHandler.js";
 export const obstacles = [];
 let nextSpawnZ = 100;  // Start generation further ahead to give player time at start
 
-const spawnAhead = 300;    // how far ahead we maintain content
-const despawnBehind = 30;  // remove when behind camera
+const spawnAhead = 300;    // how far ahead we spawn obstacles
+const despawnBehind = 30;  // removed when behind camera
 
 let difficulty = 0;
 
-// Flight bounds (tune)
+// Flight bounds
 const X_MIN = -100, X_MAX = 100;
 const Y_MIN = -12,  Y_MAX = 12;
 
-const CORRIDOR_COUNT = 7;     // 3-wide
-const CORRIDOR_SPACING = 35;  // world units between corridor centres (tune)
+const CORRIDOR_COUNT = 7;     
+const CORRIDOR_SPACING = 35;  // world units between corridor centres
 
-// Optional: enforce player flight band so “fly over everything” is impossible
 export const FLIGHT = { X_MIN, X_MAX, Y_MIN, Y_MAX };
 
 function shipHalfExtents() {
-  // make X bigger if you want roll to matter
-  return v3(2.0, 0.6, 2.5);
+    return v3(2.0, 0.6, 2.5);
 }
 
 function shipWorldCenter() {
@@ -34,14 +32,14 @@ function shipWorldCenter() {
     return v3(
         shipWorldBase.x + ship.pos.x,
         shipWorldBase.y + ship.pos.y,
-        shipWorldBase.z + ship.pos.z
+        shipWorldBase.z + ship.pos.zqqqqq
     );
 }
 
 function spawnBoxWorld(zWorld, x, groundY, w, h, d, color) {
     const hy = h * 0.5;
     obstacles.push({
-        pos: v3(x, groundY + hy, zWorld),     // <-- centre lifted by half height
+        pos: v3(x, groundY + hy, zWorld),
         half: v3(w*0.5, hy, d*0.5),
         color
     });
@@ -49,14 +47,13 @@ function spawnBoxWorld(zWorld, x, groundY, w, h, d, color) {
 
 function spawnCorridorEnemies(zWorld, cx, cy, hw, hh) {
     const r = Math.random();
-    // Spawn enemies further ahead (at zWorld + 50-80) so player can see them coming
+    // Spawn enemies further ahead
     const spawnOffset = 50 + Math.random() * 30;
-    if (r < 0.20) spawnTurret(zWorld + spawnOffset, cx + (Math.random()*2-1)*hw*0.6);  // Reduced from 0.35
+    if (r < 0.20) spawnTurret(zWorld + spawnOffset, cx + (Math.random()*2-1)*hw*0.6); 
     else if (r < 0.25) spawnDrone(zWorld + spawnOffset, cx, cy, hh);  // ~5% chance for drones
-    // else none
+    // I dont have more enemy types yet :C
 }
 
-// test git
 function checkCollisions() {
     const shipWorldBase = v3(cam.x, cam.height, cam.z + ship.toCamDist);
     const shipC = v3(
@@ -65,10 +62,10 @@ function checkCollisions() {
         shipWorldBase.z + ship.pos.z
     );
 
-    // Ship half-extents (in model space)
+    // Ship half-extents (in local (model space if you prefer it this way) space)
     const shipHalf = v3(2.2, 0.7, 1.0);
 
-    // Get the 8 corners of the ship's bounding box in model space
+    // Get the 8 corners of the ship's bounding box
     const corners = [
         v3(-shipHalf.x, -shipHalf.y, -shipHalf.z),
         v3( shipHalf.x, -shipHalf.y, -shipHalf.z),
@@ -80,7 +77,7 @@ function checkCollisions() {
         v3( shipHalf.x,  shipHalf.y,  shipHalf.z),
     ];
 
-    // Rotate corners by ship's rotation (same order as rendering: Z, X, Y)
+    // Rotate corners by ships rotation
     const rotatedCorners = corners.map(c => {
         let p = rotateZ(c, ship.roll + ship.sideTilt);
         p = rotateX(p, ship.pitch);
@@ -115,9 +112,9 @@ function checkCollisions() {
             (shipMinZ <= oMax.z && shipMaxZ >= oMin.z);
 
         if (hit) {
-            ship.Shield -= 1;  // Damage shield
-            ship.lastDamageTime = 0;  // Reset damage timer for regeneration
-            ship.Score -= 50;  // Lose points for hitting obstacle
+            ship.Shield -= 1;           // Damage shield
+            ship.lastDamageTime = 0;    // Reset damage timer for regeneration
+            ship.Score -= 25;           // Lose points for hitting obsticles
             obstacles.splice(i, 1);
             break;
         }
@@ -153,38 +150,34 @@ export function updateObstacles(dt) {
         spawnSegment(nextSpawnZ);
         nextSpawnZ += segmentLength();
     }
-
-    // 3) difficulty ramp (optional)
     difficulty = Math.min(1, difficulty + dt * 0.02);
 }
 
 function segmentLength() {
-    return 20 + Math.random() * 15; // Increased spacing between obstacle groups
+    return 20 + Math.random() * 15;
 }
 
 function spawnSegment(zWorld) {
     const s = shipWorldCenter();
 
-    // base corridor follows ship (no lag)
+    // base corridor follows ship
     const baseX = clamp(s.x, X_MIN + 10, X_MAX - 10);
     const baseY = clamp(s.y, Y_MIN + 6,  Y_MAX - 6);
 
-    // corridor size must fit ship
     const he = shipHalfExtents();
     const hw = Math.max(he.x + 1.5, 12 - 6 * difficulty);
     const hh = Math.max(he.y + 1.5,  7 - 3 * difficulty);
 
-    // corridor vertical center (world-space)
     let cy = baseY;
 
     // ensure corridor bottom is above ground
     const GROUND_Y = 0.0;
-    const MIN_CLEAR = 0.5;             // small clearance so it doesn't clip
+    const MIN_CLEAR = 0.5;             // prevent clipping (i hope)
     const minCy = GROUND_Y + hh + MIN_CLEAR;
 
     cy = Math.max(cy, minCy);
 
-    // spawn 3 corridors: left, center, right
+    // spawn 3 corridors: left and one more left (because i want), center, right and one more to the right (because i see that program can handle it)
     const mid = (CORRIDOR_COUNT / 2) | 0;
 
     for (let i = 0; i < CORRIDOR_COUNT; i++) {
@@ -197,6 +190,7 @@ function spawnSegment(zWorld) {
     }
 }
 
+// Next section is for patterns that you see in the level, it contains functions that spawn boxes in a very specific way which i like
 
 function patternCeilingBeam(zWorld, cx, cy, hw, hh) {
     const beamW = hw * 2 + 10;

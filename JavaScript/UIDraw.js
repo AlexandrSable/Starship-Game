@@ -1,6 +1,6 @@
-import { packRGBA, clamp                                                                         } from "./supportMathFuncs.js";
+import { packRGBA, clamp                                                                                } from "./supportMathFuncs.js";
 import { canvasHeight, canvasWidth, UIBuffer32, MAINMENUOPENED, fpsCounter, deltaTimeCounter, bestScore } from "./main.js";
-import { ship                                                                                    } from "./playerShip.js";
+import { ship                                                                                           } from "./playerShip.js";
 
 ///////////////////////////// UI Draw functions ///////////////////////////
 
@@ -44,8 +44,7 @@ function uiLine(x0, y0, x1, y1, col) {
 
 
 //---------- Bitmap font (4x6) ----------
-// Each glyph is 6 rows, 4 bits per row (MSB on the left).
-// Example row 0b1111 means ####
+// Each glyph is 6 rows, 4 bits per row
 const FONT_W = 4;
 const FONT_H = 6;
 
@@ -88,7 +87,7 @@ const FONT4x6 = {
     " ": [0b0000,0b0000,0b0000,0b0000,0b0000,0b0000],
 };
 
-// Draw one glyph at (x,y). "scale" makes chunky retro text.
+// Draw one glyph at (x,y).
 function uiChar(x, y, ch, col, scale = 2) {
     const g = FONT4x6[ch] || FONT4x6["?"];
     if (!g) return;

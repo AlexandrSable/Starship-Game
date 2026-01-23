@@ -1,4 +1,4 @@
-import { v3, packRGBA } from "./supportMathFuncs.js";
+import { v3 } from "./supportMathFuncs.js";
 import { playSoundSingular, sounds} from "./main.js";
 
 /////////////////////////// Ship State Object //////////////////////////////
@@ -31,12 +31,12 @@ export const ship = {
     ShieldMax: 5,
     Energy: 5,
     EnergyMax: 5,
-    lastDamageTime: -999,  // Time since last damage
+    lastDamageTime: -999,  
     lastEnergyUseTime: -999,  // Time since last energy use
     shieldRegenDelay: 2.0,  // Seconds before shield starts regenerating
     energyRegenDelay: 1.0,  // Seconds before energy starts regenerating
-    shieldRegenRate: 3.0,   // Points per second
-    energyRegenRate: 2.5,   // Points per second
+    shieldRegenRate: 3.0,   // Regen per second
+    energyRegenRate: 2.5,   // Regen per second
 };
 
 export const idle = {
@@ -52,7 +52,7 @@ export const idle = {
 
 export function startBarrelRoll(dir) {
     if(ship.rollActive) return;
-    if(ship.Energy < 1) return;  // Not enough energy
+    if(ship.Energy < 1) return;  // Not enough energy to do a roll :C
 
     ship.Energy -= 1;  // Consume energy
     ship.lastEnergyUseTime = 0;  // Reset energy regen timer

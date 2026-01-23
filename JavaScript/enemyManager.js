@@ -1,7 +1,8 @@
 import { v3, packRGBA, clamp, aimAngles, approachAngle} from "./supportMathFuncs.js";
 import { cam, projectiles, enemyShots, resetBestScore, bestScore, GoToMenu, playSoundSingular, sounds } from "./main.js";
 import { ship } from "./playerShip.js";
-import { obstacles, resetSceneSpawner } from "./sceneHandler.js";
+import { obstacles, resetSceneSpawner } from "./sceneManager.js";
+import { spawnExplosion } from "./vfxManagher.js";
 
 export const enemies = [];
 
@@ -27,7 +28,7 @@ function hasLineOfSight(from, to) {
     
     // Check each obstacle
     for (const o of obstacles) {
-        // Simple AABB ray intersection
+        // Simple AABB ray intersection (Cool math that i do not understand to full extent, but i mean, it works)
         const oMin = v3(o.pos.x - o.half.x, o.pos.y - o.half.y, o.pos.z - o.half.z);
         const oMax = v3(o.pos.x + o.half.x, o.pos.y + o.half.y, o.pos.z + o.half.z);
         
@@ -40,7 +41,7 @@ function hasLineOfSight(from, to) {
 }
 
 function rayAABBIntersect(p1, p2, aabbMin, aabbMax) {
-    // Check if line segment from p1 to p2 intersects AABB
+    // Check for intersection 
     const dx = p2.x - p1.x;
     const dy = p2.y - p1.y;
     const dz = p2.z - p1.z;
@@ -48,7 +49,7 @@ function rayAABBIntersect(p1, p2, aabbMin, aabbMax) {
     let tmin = -Infinity;
     let tmax = Infinity;
     
-    // Check x slab
+    // Check x plane
     if (Math.abs(dx) > 0.001) {
         const t1 = (aabbMin.x - p1.x) / dx;
         const t2 = (aabbMax.x - p1.x) / dx;
@@ -58,7 +59,7 @@ function rayAABBIntersect(p1, p2, aabbMin, aabbMax) {
         return false;
     }
     
-    // Check y slab
+    // Check y plane
     if (Math.abs(dy) > 0.001) {
         const t1 = (aabbMin.y - p1.y) / dy;
         const t2 = (aabbMax.y - p1.y) / dy;
@@ -68,7 +69,7 @@ function rayAABBIntersect(p1, p2, aabbMin, aabbMax) {
         return false;
     }
     
-    // Check z slab
+    // Check z plane
     if (Math.abs(dz) > 0.001) {
         const t1 = (aabbMin.z - p1.z) / dz;
         const t2 = (aabbMax.z - p1.z) / dz;
@@ -96,7 +97,7 @@ export function spawnTurret(zWorld, cx) {
     const w = 5, h = 10, d = 3;
     enemies.push({
         type: "turret",
-        pos: v3(cx, 0, zWorld),  // Sit on ground level (y=0)
+        pos: v3(cx, 0, zWorld),  // Spawn on ground level (y=0)
         yaw: 0,
         pitch: 0,
         roll: 0,
@@ -105,7 +106,7 @@ export function spawnTurret(zWorld, cx) {
         dmg: 1,
         shotSpeed: 50,
         fireRate: 0.9,  // seconds between shots
-        cooldown: 0.3,  // fire sooner on spawn
+        cooldown: 0.3,  // fire faster on spawn
         vel: v3(0,0,0),
         half: v3(w*0.5, h*0.5, d*0.5),
         hp: 2,
@@ -118,9 +119,8 @@ export function spawnTurret(zWorld, cx) {
 
 export function spawnDrone(zWorld, cx, cy, hh) {
     const w = 3.2, h = 2.2, d = 3.2;
-    // Spawn drones high up and far behind camera so they fly into view from the sky
-    const spawnHeight = cam.height + 30;  // Spawn high above the camera
-    const spawnZ = cam.z + 400;  // Spawn much further behind camera for longer approach time
+    const spawnHeight = cam.height + 30;  // Spawn drones above the camera
+    const spawnZ = cam.z + 400;           // Spawn further in front of the camera
     
     enemies.push({
         type: "drone",
@@ -137,7 +137,7 @@ export function spawnDrone(zWorld, cx, cy, hh) {
         dmg: 1,
         shotSpeed: 60,
         fireRate: 1.5,  // seconds between shots
-        cooldown: 0.2,  // fire sooner on spawn
+        cooldown: 0.2,  // fire faster on spawn
         vel: v3(0,0,0),
         half: v3(w*0.5, h*0.5, d*0.5),
         hp: 1,
@@ -149,17 +149,17 @@ export function spawnDrone(zWorld, cx, cy, hh) {
 }
 
 export function updateEnemies(dt, enemyShots, playerShots) {
-    const player = shipWorldCenter(); // your existing function
+    const player = shipWorldCenter();
 
     for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
 
-        // despawn behind camera - only for turrets that drift back, drones stay in front
+        // despawn behind camera (only for turrets)
         if (e.type === "turret") {
             const despawnDist = 15;
             if (e.pos.z < cam.z - despawnDist) { enemies.splice(i,1); continue; }
         } else if (e.type === "drone") {
-            // Drones never despawn on Z, but despawn if too far to the side or down
+            // Drones never despawn on Z, but do if you are too far on X
             if (Math.abs(e.pos.x - cam.x) > 100 || e.pos.y < -20) {
                 enemies.splice(i,1); 
                 continue; 
@@ -168,19 +168,18 @@ export function updateEnemies(dt, enemyShots, playerShots) {
 
         // --- rotate toward player ---
         if (e.type === "turret") {
-            // Turrets only rotate on yaw (around Y axis) to face player - stay upright
             // Only consider X and Z position difference (ignore Y height)
             const dx = player.x - e.pos.x;
             const dz = player.z - e.pos.z;
-            const targetYaw = Math.atan2(dx, dz);  // Try original axis order
+            const targetYaw = Math.atan2(dx, dz);
             const turn = 2.8;
             e.yaw = approachAngle(e.yaw, targetYaw, turn * dt);
-            // Lock all other rotations - add default pitch to point forward
-            e.pitch = -Math.PI * 0.5;  // -90 degrees to point forward correctly
+            // Lock all other rotations
+            e.pitch = -Math.PI * 0.5;  // -90 degrees to point forward 
             e.roll = 0;   
             e.sideTilt = 0;  
         } else if (e.type === "drone") {
-            // Drones face toward the player - same as turrets
+            // Drones face toward the player
             const dx = player.x - e.pos.x;
             const dz = player.z - e.pos.z;
             const targetYaw = Math.atan2(dx, dz);
@@ -194,23 +193,21 @@ export function updateEnemies(dt, enemyShots, playerShots) {
 
         // --- movement for drones ---
         if (e.type === "drone") {
-            // Drones fly towards the player from their spawn position
-            // Target position: in front of and at the same height as player
+            // Fly towards the player from their spawn position
             const desiredZOffset = 50;  
             const targetX = cam.x;
             const targetZ = cam.z + desiredZOffset;
             
-            // Vary Y position sinusoidally around camera height
-            const yOffset = Math.sin(e.phase + performance.now() * 0.001) * 5;  // Varies -5 to 5
+            // Vary Y position preventing drones gathering in one spot
+            const yOffset = Math.sin(e.phase + performance.now() * 0.001) * 5;
             const targetY = cam.height + yOffset;
             
-            // Smooth approach to target position (flying towards player)
-            const moveSpeed = 55;  // How quickly they fly towards target
+            const moveSpeed = 55;  // Drones fly speed
             const driftX = clamp(targetX - e.pos.x, -moveSpeed, moveSpeed);
             const driftY = clamp(targetY - e.pos.y, -moveSpeed, moveSpeed);
             const driftZ = clamp(targetZ - e.pos.z, -moveSpeed, moveSpeed);  // Match speed on all axes
             
-            // Test new position before applying
+            // Test new position for collision before applying
             const newPosX = e.pos.x + driftX * dt;
             const newPosY = e.pos.y + driftY * dt;
             const newPosZ = e.pos.z + driftZ * dt;
@@ -244,7 +241,7 @@ export function updateEnemies(dt, enemyShots, playerShots) {
             // shoot if within range and has line of sight
             const dist = Math.hypot(player.x - e.pos.x, player.y - e.pos.y, player.z - e.pos.z);
 
-            // For drones, only shoot if they're in front of the player (pos.z > cam.z) and not too close
+            // For drones only shoot if they are in front of the player
             const canShoot = (e.type === "drone") ? (e.pos.z > cam.z && dist > 20) : true;
 
             if (canShoot && dist < 150 && hasLineOfSight(e.pos, player)) {
@@ -263,6 +260,8 @@ export function updateEnemies(dt, enemyShots, playerShots) {
                     // Award points based on enemy type
                     const pointsValue = (e.type === "turret") ? 50 : 25;
                     ship.Score += pointsValue;
+                    // Spawn explosion at enemy position
+                    spawnExplosion(e.pos, { size: e.type === "turret" ? 50 : 35, life: 0.6 });
                     // Play explosion sound
                     playSoundSingular(sounds.explosion, 0.3);
                     enemies.splice(i, 1);
@@ -275,12 +274,12 @@ export function updateEnemies(dt, enemyShots, playerShots) {
 
 export function updateEnemyShots(dt, enemyShots) {
     const shipC = shipWorldCenter();
-    const shipHalf = v3(2.0, 1.2, 2.5); // same you use for collisions
+    const shipHalf = v3(2.0, 1.2, 2.5);
 
     for (let i = enemyShots.length - 1; i >= 0; i--) {
         const s = enemyShots[i];
         
-        if (!s) continue;  // Safety check in case array was cleared
+        if (!s) continue;
         if(s.life != null) s.life -= dt;
         if (s.life <= 0) { enemyShots.splice(i,1); continue; }
 
@@ -301,7 +300,7 @@ export function updateEnemyShots(dt, enemyShots) {
 
         // hit test with player
         if (aabbHit(s.pos, s.half, shipC, shipHalf)) {
-            applyDamageToPlayer(s.dmg);  // <-- turret 2, drone 1
+            applyDamageToPlayer(s.dmg);
             enemyShots.splice(i,1);
         }
     }
@@ -315,10 +314,6 @@ function spawnEnemyShot(enemy, dir, enemyShots) {
     // Play enemy shoot sound
     playSoundSingular(sounds.smallPew, 0.2);
 
-    // Calculate yaw and pitch from direction vector
-    // The projectile model points forward along +Z at pitch=π/2, yaw=0
-    // yaw = rotation around Y axis (horizontal plane)
-    // pitch = rotation around X axis (vertical) - offset by π/2 for model orientation
     const yaw = Math.atan2(dir.x, dir.z);
     const horizontalDist = Math.hypot(dir.x, dir.z);
     const pitch = Math.PI * 0.5 + Math.atan2(dir.y, horizontalDist);
@@ -352,7 +347,7 @@ export function applyDamageToPlayer(damage) {
     // Import ship at the top if not already done
     ship.Shield -= damage;
     ship.lastDamageTime = 0;  // Reset damage timer for regeneration delay
-    //console.log(`Player took ${damage} damage! Shield: ${Math.max(0, ship.Shield)}/${ship.ShieldMax}`);
+    //console.log(`Player took ${damage} damage Shield: ${Math.max(0, ship.Shield)}/${ship.ShieldMax}`);
     
     // Check if player is dead
     if (ship.Shield <= 0) {

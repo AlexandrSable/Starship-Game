@@ -9,11 +9,6 @@ const lerp =  (a, b, t) => a + (b - a) * t;
 function scale2DAbout(p, ax, ay, s) {
     return { x: ax + (p.x - ax) * s, y: ay + (p.y - ay) * s, z: p.z };
 }
-function approach(current, target, maxStep) {
-    const d = target - current;
-    if (Math.abs(d) <= maxStep) return target;
-    return current + Math.sign(d) * maxStep;
-}
 function approachAngle(current, target, maxStep) {
     // Normalize the difference to [-π, π] for shortest path
     let d = target - current;
@@ -23,7 +18,7 @@ function approachAngle(current, target, maxStep) {
     return current + Math.sign(d) * maxStep;
 }
 function blink01(t, hz = 8) {
-  // returns 0 or 1 (hard toggle)
+  // returns 0 or 1 based on time
   return ((t * hz) | 0) & 1;
 }
 //////////////////// Color & Basic Shading functions //////////////////////
@@ -141,14 +136,8 @@ function aimAngles(from, to) {
     return { yaw, pitch };
 }
 
-function wrapPi(a) {    
-    while (a >  Math.PI) a -= Math.PI * 2;
-    while (a < -Math.PI) a += Math.PI * 2;
-    return a;
-}
-
-export { clamp, lerp, scale2DAbout, approach, packRGBA, dither4x4,
+export { clamp, lerp, scale2DAbout, packRGBA, dither4x4,
          unpackR, unpackG, unpackB,
          v3, v3Add, v3Sub, v3Scale, v3Dot, v3Cross, v3Normalize,
          project3D, rotateX, rotateY, rotateZ,
-         worldToCamera, modelToWorld, avg3Color, magicalUnpackAll, blink01, approachAngle, aimAngles, wrapPi };
+         worldToCamera, modelToWorld, avg3Color, magicalUnpackAll, blink01, approachAngle, aimAngles };

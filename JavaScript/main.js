@@ -1,26 +1,60 @@
 ///////////////////////////////////////////////////////////////////////////
-// Explanation thing
-// Recomended to scale window to about 250-300%
-///////////////////////////////////////////////////////////////////////////
+//                      Starship Game v1.0                               //
+// !RECOMENDED! to scale window to about 250-300% (depending on monitor) //
+// As i was testing, on fullHD 180 hz monitor it runs at 170-180 fps     //
+// This project featurs mostly finished game with SFX, VFX, UI, enemies  //
+// and a bunch of other gameplay mechanics that should be present in game//
+//                                                                       //
+// Done in pure JavaScript with software rendering only + a bit of HTML  //
+// No libraries used!                                                    //
+//                                                                       //
+// !BE CAREFULL! I am not sure about how loud the volume is for some SFX //
+// so lower your volume before starting the game, and then increase it   //
+// if needed.                                                            //
+//                                                                       //
+// Controls:    W/S - pitch up/down                                      //
+//              A/D - roll left/right                                    //
+//              Q/E - HOLD to rotate 90 degrees (fit into narrow gaps)   //
+//              Q/E - TAP to barrel roll                                 //
+//              Arrow Up - speed boost                                   //
+//              Arrow Down - slow down                                   //
+//              Space - shoot projectile                                 //
+//                                                                       //
+// Gameplay: involves you flying throught a city blocks. Shooting down   //
+// such enemies as turrets and drones, while avoiding collisions with    //
+// buildings. You have shield and energy resources to manage, try to     //
+// survive as long as possible and get highest score! High score stores  //
+// in browser local storage, so it will be visible even after you reload //
+// or close the page.                                                    //
+//                                                                       //
+// I have some plans for expansion of this project, such as hosting it   //
+// on a web server with git hub or something like that. Switching town   //
+// to space with asteroid field (why didnt i think aboit that earlier?)  //
+// and adding more enemy types, power ups and maybe some difficult       //
+// encounters. Maybe even leader board, if it will be possible to host it//
+//                                                                       //
+// Enjoy!                                                                //
+//                                                                       //
+// Made by Alexandr Soboliev -> P2916014                     y2026       //
+/////////////////////////////////////////////////////////////////////////// 
 
 ////////////////////////////// AUDIO HANDLING /////////////////////////////
 
 export let audioCtx = null;
-let mainMenuVolume = 0.0;
 
 export function initAudio() {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  // Resume audio context on user interaction (required by browsers)
-  if (audioCtx.state === 'suspended') {
-    document.addEventListener('click', () => {
-      audioCtx.resume().catch(e => console.log('Audio resume failed:', e));
-    }, { once: true });
-    document.addEventListener('keydown', () => {
-      audioCtx.resume().catch(e => console.log('Audio resume failed:', e));
-    }, { once: true });
-  }
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    // Resume audio context on player interaction, apparently it is required by browsers
+    if (audioCtx.state === 'suspended') {
+            document.addEventListener('click', () => {
+            audioCtx.resume().catch(e => console.log('Audio resume failed:', e));
+        }, { once: true });
+            document.addEventListener('keydown', () => {
+            audioCtx.resume().catch(e => console.log('Audio resume failed:', e));
+        }, { once: true });
+    }
 }
 
 initAudio();
@@ -49,21 +83,21 @@ export async function loadSounds() {
     sounds.fastSwoosh   = await loadSound("./sfx/fastSwooshForDash.wav");
 }
 
-// Helper to create and store a looping sound with gain control
+// Helper to create and store a looping sound
 function createLoopingSound(soundKey, volume = 0.5) {
-    if (!sounds[soundKey] || audioSources[soundKey]) return;  // Check if it exists
+    if (!sounds[soundKey] || audioSources[soundKey]) return;  // Check if it even exists
     
     const { src, gain } = playSoundLoop(sounds[soundKey], volume);
     audioSources[soundKey] = { src, gain };
 }
 
-// Helper to stop a looping sound
+// Function to stop a looping sound
 function stopSound(soundKey) {
     if (audioSources[soundKey]) {
         try {
             audioSources[soundKey].src.stop();
         } catch (e) {
-            // Already stopped
+            // If it is already stopped
         }
         delete audioSources[soundKey];
     }
@@ -101,6 +135,7 @@ export function playSoundLoop(buffer, volume = 0.5) {
 }
 ///////////////////////////// MAIN PROGRAM ////////////////////////////////
 
+// Load sounds on start up
 (async () => {
   try {
     await loadSounds();
@@ -117,8 +152,9 @@ import { clamp, lerp, packRGBA, v3, approachAngle                               
 import { ship, startBarrelRoll, updateShipResources                                                   } from './playerShip.js';
 import { drawUI                                                                                       } from './UIDraw.js';
 import { drawObstacles, drawShip, drawShipShadowScaled, drawProjectiles, drawEnemies, drawBoxObstacle } from './sRasterizer.js';
-import { updateObstacles, checkCollisions, cullObstacles, obstacles                                   } from './sceneHandler.js';
-import { updateEnemies, updateEnemyShots, resetLevel                                                  } from './enemyHandler.js';
+import { updateObstacles, checkCollisions, cullObstacles, obstacles                                   } from './sceneManager.js';
+import { updateEnemies, updateEnemyShots, resetLevel                                                  } from './enemyManager.js';
+import { updateVFX, drawVFX_World, spawnExplosion, startScreenTransition, drawScreenTransition        } from "./vfxManagher.js";
 
 function clearWO() {
     WOBuffer32.fill(0);
@@ -128,9 +164,6 @@ function clearUI() {
 }
 function clearZ() { 
     zbuf.fill(1e9);
-}
-function clearSSVE() {
-    SSVEBuffer32.fill(0);
 }
 
 export function GoToMenu(){
@@ -170,7 +203,6 @@ export const BGBuffer32    = new Uint32Array (canvasWidth * canvasHeight);
 export const WOBuffer32    = new Uint32Array (canvasWidth * canvasHeight);
 export const UIBuffer32    = new Uint32Array (canvasWidth * canvasHeight);
 export const zbuf          = new Float32Array(canvasWidth * canvasHeight);
-export const SSVEBuffer32  = new Uint32Array (canvasWidth * canvasHeight);
 
 export const projectiles = [];
 export const enemyShots = [];
@@ -242,7 +274,6 @@ function renderStars(dt) {
 ///////////////////////////// INPUT HANDLING //////////////////////////////
 
 const HOLD_TIME = 0.15;  // seconds before a hold is triggered
-const TAP_TIME = 0.1;  // seconds threshold for a tap
 
 const keyState = {
     Q: { down:false, t:0, didHold:false },
@@ -265,28 +296,28 @@ window.addEventListener("keyup", (e) => {
 });
 
 function updateQEHolds(dt) {
-    // Q hold - rotate to nearest right (clockwise)
+    // Q hold - rotate to nearest right
     if (keyState.Q.down) {
         keyState.Q.t += dt;
         if (!keyState.Q.didHold && keyState.Q.t >= HOLD_TIME) {
             keyState.Q.didHold = true;
             // Cancel any barrel roll that might have started
             ship.rollActive = false;
-            // Find nearest +90° position (could be π/2 or -3π/2)
+            // Find nearest +90° position
             const rightTarget = Math.PI * 0.5;
             const rightAlt = rightTarget - Math.PI * 2;
             ship.sideTarget = Math.abs(ship.sideTilt - rightTarget) <= Math.abs(ship.sideTilt - rightAlt) ? rightTarget : rightAlt;
         }
     }
 
-    // E hold - rotate to nearest left (counterclockwise)
+    // E hold - rotate to nearest left
     if (keyState.E.down) {
         keyState.E.t += dt;
         if (!keyState.E.didHold && keyState.E.t >= HOLD_TIME) {
             keyState.E.didHold = true;
             // Cancel any barrel roll that might have started
             ship.rollActive = false;
-            // Find nearest -90° position (could be -π/2 or 3π/2)
+            // Find nearest -90° position
             const leftTarget = -Math.PI * 0.5;
             const leftAlt = leftTarget + Math.PI * 2;
             ship.sideTarget = Math.abs(ship.sideTilt - leftTarget) <= Math.abs(ship.sideTilt - leftAlt) ? leftTarget : leftAlt;
@@ -295,23 +326,18 @@ function updateQEHolds(dt) {
 }
 
 function onQERelease(dir, st) {
-    // If a hold was triggered, or the key was held long enough, return to neutral
     if (st.didHold || st.t >= HOLD_TIME) {
         ship.sideTarget = 0; // go back to normal orientation
         return;
     }
 
-    // Only do barrel roll on very quick taps (under 0.15 seconds)
+    // Only do barrel roll on a quick button press
     if (st.t < 0.15) {
         startBarrelRoll(dir);
     }
 }
 
 const keyPrev = new Set();
-
-function KeyPressed(key) {
-    return keys.has(key) && !keyPrev.has(key);
-}
 
 function endFrameKeys() {
     keyPrev.clear();
@@ -335,13 +361,13 @@ function spawnProjectile() {
             cam.height + ship.pos.y + muzzleLocal.y,
             cam.z                   + muzzleLocal.z),
 
-    vel: v3(0, 0, PROJ_SPEED),   // forward along +Z (your world forward)
-    half: v3(0.2, 0.2, 0.4),    // collision half-extents for the projectile
+    vel: v3(0, 0, PROJ_SPEED),   // forward +Z 
+    half: v3(0.2, 0.2, 0.4),     // half-extents collision 
     life: PROJ_LIFE,
-    yaw: 0, pitch: Math.PI * 0.5, roll: 0,  // Point along Z axis
-    scale: 0.1,  // Much smaller projectiles
+    yaw: 0, pitch: Math.PI * 0.5, roll: 0,  // Z axis
+    scale: 0.1, 
     sideTilt: 0,
-    color: PROJ_COLOR  // cyan color for player projectiles
+    color: PROJ_COLOR
   };
 
   playSoundSingular(sounds.bigPew, 0.21);
@@ -360,7 +386,7 @@ function updateProjectiles(dt) {
     // Check collision with obstacles
     let hitObstacle = false;
     for (const o of obstacles) {
-      // Simple AABB collision
+      // AABB collision
       if (Math.abs(p.pos.x - o.pos.x) <= (p.half.x + o.half.x) &&
           Math.abs(p.pos.y - o.pos.y) <= (p.half.y + o.half.y) &&
           Math.abs(p.pos.z - o.pos.z) <= (p.half.z + o.half.z)) {
@@ -377,7 +403,7 @@ function updateProjectiles(dt) {
 
 /////////////////////////// MODE 7 BACKGROUND /////////////////////////////
 
-// ---- camera ----
+// CAMERA 
 export const cam = {
     x: 0,
     z: 0,
@@ -388,10 +414,10 @@ export const cam = {
 };
 
 let lastT = performance.now();
-let lastCamZ = 0;  // Track camera z position for distance-based scoring
+let lastCamZ = 0;  // Track Z position
 
 function renderMode7() {
-// Horizon (pitch)
+// Pitch
     const baseHorizon = canvasHeight * 0.5;
     let horizon = baseHorizon - cam.pitch * canvasHeight * 0.3;
     
@@ -405,7 +431,7 @@ function renderMode7() {
     const fov = 1.0;
 
     for (let y = 0; y < canvasHeight; y++) {
-        // Rotate screen coordinate around center by -roll to get unrotated position
+        // Rotate screen coordinate around center 
         const screenY = y - screenCenterY;
         let unrotY = screenCenterY;
         
@@ -459,13 +485,6 @@ function compositeBuffers() {
         FinalImage32[i] = (a !== 0) ? w : BGBuffer32[i];
     }
     
-    // SSVE + Result
-    for (let i = 0; i < FinalImage32.length; i++) {
-        const s = SSVEBuffer32[i];
-        const a = s >>> 24;  // alpha byte
-        FinalImage32[i] = (a !== 0) ? s : FinalImage32[i];
-    }
-
     // Result + UI
     for (let i = 0; i < FinalImage32.length; i++) {
         const u = UIBuffer32[i];
@@ -496,15 +515,14 @@ function update(deltaTime) {
     const maxSpeed = 40;
     
     if (keys.has("ArrowUp") && ship.Energy > 0) {
-        // Boost: increase speed and consume energy
         cam.speed = Math.min(maxSpeed, cam.speed + speedChangeRate * deltaTime);
-        ship.Energy -= 15 * deltaTime;  // Energy cost per second
+        ship.Energy -= 15 * deltaTime; 
         ship.lastEnergyUseTime = 0;  // Reset regen timer
     } else if (keys.has("ArrowDown")) {
-        // Slow down: decrease speed (no energy cost)
+        // Slow down: decrease speed
         cam.speed = Math.max(minSpeed, cam.speed - speedChangeRate * deltaTime);
     } else {
-        // Return to normal speed gradually
+        // Return to normal speed
         const normalSpeed = 20;
         if (cam.speed > normalSpeed) {
             cam.speed = Math.max(normalSpeed, cam.speed - speedChangeRate * 0.5 * deltaTime);
@@ -598,7 +616,6 @@ function renderFrame(t) {
     clearWO();
     clearZ();
     clearUI();
-    clearSSVE();
 
     if(!MAINMENUOPENED){
         if (keys.has("Escape")) 
@@ -606,7 +623,6 @@ function renderFrame(t) {
             resetLevel();
             MAINMENUOPENED = true;
         }
-        mainMenuVolume = 1.0;
         
         // Start game sounds when not in menu
         if (!audioSources.ambience) createLoopingSound("ambience", 0.05);
@@ -623,6 +639,7 @@ function renderFrame(t) {
         updateEnemies(deltaTime, enemyShots, projectiles);
         updateProjectiles(deltaTime);
         updateEnemyShots(deltaTime, enemyShots);
+        updateVFX(deltaTime);
 
         checkCollisions();
         cullObstacles();
@@ -633,11 +650,15 @@ function renderFrame(t) {
         drawEnemies(drawBoxObstacle);
         drawShip();
         drawProjectiles();
+        drawVFX_World(WOBuffer32, zbuf, canvasWidth, canvasHeight, cam, fovPx, cx, cy);
 
     }
     else
     {
-        if (keys.has("Space")) MAINMENUOPENED = false;
+        if (keys.has("Space")) {
+            MAINMENUOPENED = false;
+            startScreenTransition(0.8);
+        }
         
         // Stop game sounds when in menu
         stopSound("ambience");
@@ -647,7 +668,6 @@ function renderFrame(t) {
         // Draw Main Menu
         renderStars(deltaTime);
         ship.lightDir = v3(0, 1, -1);
-        mainMenuVolume = 0.0;
         ship.pos.x = 0;
         ship.pos.y = -0.5;
         ship.pos.z = -3.5;
@@ -665,6 +685,7 @@ function renderFrame(t) {
     }
 
     drawUI(t);
+    drawScreenTransition(UIBuffer32, canvasWidth, canvasHeight);
     compositeBuffers();
     ctx.putImageData(img, 0, 0);
 
